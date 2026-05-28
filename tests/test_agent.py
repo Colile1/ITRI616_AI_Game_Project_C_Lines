@@ -98,3 +98,72 @@ def test_A04_heuristic_takes_win():
     action = agent.select_action(obs, mask)
     r, c = divmod(action, n)
     assert (r, c) == (0, 3), f"Expected win at (0,3), got ({r},{c})"
+
+
+# ---------------------------------------------------------------------------
+# A-05: DQNAgent at eps=1 always returns a legal action (pure random)
+# ---------------------------------------------------------------------------
+def test_A05_dqn_eps1_legal():
+    from src.agents.dqn_agent import DQNAgent
+    agent = DQNAgent(board_size=8)
+    agent.set_epsilon(1.0)
+    env = GameEnv(board_size=8)
+    obs = env.reset()
+    for _ in range(30):
+        mask = env.legal_mask()
+        if not mask.any():
+            break
+        action = agent.select_action(obs, mask)
+        assert mask[action], f"DQN eps=1 chose illegal action {action}"
+        obs, _, done, _ = env.step(action)
+        if done:
+            obs = env.reset()
+
+
+# ---------------------------------------------------------------------------
+# A-06: DQNAgent at eps=0 returns a legal action (greedy)
+# ---------------------------------------------------------------------------
+def test_A06_dqn_eps0_legal():
+    from src.agents.dqn_agent import DQNAgent
+    agent = DQNAgent(board_size=8)
+    agent.set_epsilon(0.0)
+    env = GameEnv(board_size=8)
+    obs = env.reset()
+    for _ in range(30):
+        mask = env.legal_mask()
+        if not mask.any():
+            break
+        action = agent.select_action(obs, mask)
+        assert mask[action], f"DQN eps=0 chose illegal action {action}"
+        obs, _, done, _ = env.step(action)
+        if done:
+            obs = env.reset()
+
+
+# ---------------------------------------------------------------------------
+# A-07: DQNAgent update returns a non-negative float loss
+# ---------------------------------------------------------------------------
+def test_A07_dqn_update_returns_loss():
+    from src.agents.dqn_agent import DQNAgent
+    from src.training.replay_buffer import ReplayBuffer
+    import numpy as np
+    n = 8
+    agent = DQNAgent(board_size=n)
+    buf = ReplayBuffer(100)
+    s = np.zeros((6, n, n), dtype=np.float32)
+    m = np.ones(n * n, dtype=bool)
+    for i in range(64):
+        buf.push(s, i % (n*n), 0.1, s, False, m)
+    batch = buf.sample(64)
+    loss = agent.update(batch)
+    assert isinstance(loss, float)
+    assert loss >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# A-08: DQNAgent sync_target does not raise
+# ---------------------------------------------------------------------------
+def test_A08_dqn_sync_target():
+    from src.agents.dqn_agent import DQNAgent
+    agent = DQNAgent(board_size=8)
+    agent.sync_target()  # should not raise
