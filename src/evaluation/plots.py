@@ -9,11 +9,48 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 
-def _rolling(values: np.ndarray, window: int = 50) -> np.ndarray:
+def _rolling(values: np.ndarray, window: int = 10) -> np.ndarray:
     if len(values) < window:
         window = max(1, len(values))
     kernel = np.ones(window) / window
     return np.convolve(values, kernel, mode="same")
+
+
+def _load_last_run(log_csv_path: Path) -> dict[str, np.ndarray]:
+    """Read CSV and return only the last contiguous run (final game=0 onward)."""
+    import csv
+
+    all_rows: list[dict] = []
+    with open(log_csv_path) as f:
+        for row in csv.DictReader(f):
+            try:
+                int(row["game"])
+                all_rows.append(row)
+            except (KeyError, ValueError):
+                continue
+
+    if not all_rows:
+        return {}
+
+    # Find final run start
+    last_start = 0
+    for i, row in enumerate(all_rows):
+        if int(row["game"]) == 0:
+            last_start = i
+    all_rows = all_rows[last_start:]
+
+    def _col(key: str, default: float = 0.0) -> np.ndarray:
+        return np.array([float(r.get(key, default) or default) for r in all_rows])
+
+    return {
+        "games":              _col("game"),
+        "epsilons":           _col("epsilon"),
+        "losses":             _col("loss"),
+        "win_rate_vs_random": _col("win_rate_vs_random"),
+        "win_rate_vs_heuristic": _col("win_rate_vs_heuristic"),
+        "ep_lens":            _col("mean_ep_len"),
+        "lr":                 _col("lr"),
+    }
 
 
 def generate_all_plots(
@@ -22,41 +59,15 @@ def generate_all_plots(
     out_dir: Path | str,
 ) -> list[Path]:
     """Read training_log CSV and write 5 PNG figures to out_dir."""
-    import csv
-
     log_csv_path = Path(log_csv_path)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    all_rows: list[dict] = []
-    with open(log_csv_path) as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            try:
-                _ = int(row["game"])
-                all_rows.append(row)
-            except (KeyError, ValueError):
-                continue
+    data = _load_last_run(log_csv_path)
+    if not data:
+        return []
 
-    # Extract the last complete training run (starting from the final game=0 reset)
-    last_start = 0
-    for i, row in enumerate(all_rows):
-        if int(row["game"]) == 0:
-            last_start = i
-    all_rows = all_rows[last_start:]
-
-    games, epsilons, losses, win_rates, ep_lens = [], [], [], [], []
-    for row in all_rows:
-        try:
-            games.append(int(row["game"]))
-            epsilons.append(float(row["epsilon"]))
-            losses.append(float(row["loss"]))
-            win_rates.append(float(row["win_rate_vs_random"]))
-            ep_lens.append(float(row["mean_ep_len"]))
-        except (KeyError, ValueError):
-            continue
-
-    games = np.array(games)
+    games = data["games"]
     tag = f"Board {board_size}×{board_size}"
     produced: list[Path] = []
 
@@ -67,53 +78,77 @@ def generate_all_plots(
         produced.append(p)
         return p
 
-    # 1. win_rate.png
-    plt.figure()
-    plt.plot(games, win_rates, alpha=0.3, label="raw")
-    plt.plot(games, _rolling(np.array(win_rates)), label="rolling mean")
-    plt.axhline(0.5, color="grey", linestyle="--", label="50% baseline")
+    # ------------------------------------------------------------------
+    # 1. win_rate.png  — random AND heuristic on same chart
+    # ------------------------------------------------------------------
+    wr_r = data["win_rate_vs_random"]
+    wr_h = data["win_rate_vs_heuristic"]
+    plt.figure(figsize=(9, 5))
+    plt.plot(games, wr_r,               alpha=0.25, color="steelblue")
+    plt.plot(games, _rolling(wr_r),     color="steelblue",  label="vs Random (rolling)")
+    plt.plot(games, wr_h,               alpha=0.25, color="darkorange")
+    plt.plot(games, _rolling(wr_h),     color="darkorange", label="vs Heuristic (rolling)")
+    plt.axhline(0.50, color="grey",    linestyle="--", linewidth=0.8, label="50% baseline")
+    plt.axhline(0.75, color="green",   linestyle=":",  linewidth=0.8, label="75% target")
+    plt.ylim(0, 1.05)
     plt.xlabel("Training game")
-    plt.ylabel("Win rate vs Random")
+    plt.ylabel("Win rate")
     plt.title(f"Win Rate — {tag}")
     plt.legend()
+    plt.tight_layout()
     _save("win_rate.png")
 
-    # 2. reward_curve.png (using win_rate as proxy for cumulative reward)
-    plt.figure()
-    plt.plot(games, win_rates, alpha=0.3, label="win rate (proxy)")
-    plt.plot(games, _rolling(np.array(win_rates)), label="rolling mean")
+    # ------------------------------------------------------------------
+    # 2. reward_curve.png
+    # ------------------------------------------------------------------
+    plt.figure(figsize=(9, 4))
+    plt.plot(games, wr_r, alpha=0.25, color="steelblue")
+    plt.plot(games, _rolling(wr_r), color="steelblue", label="WR vs Random (reward proxy)")
     plt.xlabel("Training game")
     plt.ylabel("Win rate (reward proxy)")
     plt.title(f"Reward Curve — {tag}")
     plt.legend()
+    plt.tight_layout()
     _save("reward_curve.png")
 
+    # ------------------------------------------------------------------
     # 3. episode_length.png
-    plt.figure()
-    plt.plot(games, ep_lens, alpha=0.3, label="raw")
-    plt.plot(games, _rolling(np.array(ep_lens)), label="rolling mean")
+    # ------------------------------------------------------------------
+    ep = data["ep_lens"]
+    plt.figure(figsize=(9, 4))
+    plt.plot(games, ep, alpha=0.25, color="mediumseagreen")
+    plt.plot(games, _rolling(ep), color="mediumseagreen", label="rolling mean")
     plt.xlabel("Training game")
     plt.ylabel("Transitions per episode")
     plt.title(f"Episode Length — {tag}")
     plt.legend()
+    plt.tight_layout()
     _save("episode_length.png")
 
+    # ------------------------------------------------------------------
     # 4. epsilon_decay.png
-    plt.figure()
-    plt.plot(games, epsilons)
+    # ------------------------------------------------------------------
+    plt.figure(figsize=(9, 4))
+    plt.plot(games, data["epsilons"], color="slateblue", label="ε")
     plt.xlabel("Training game")
     plt.ylabel("Epsilon")
     plt.title(f"Epsilon Decay — {tag}")
+    plt.legend()
+    plt.tight_layout()
     _save("epsilon_decay.png")
 
+    # ------------------------------------------------------------------
     # 5. loss_curve.png
-    plt.figure()
-    plt.plot(games, losses, alpha=0.3, label="raw")
-    plt.plot(games, _rolling(np.array(losses)), label="rolling mean")
-    plt.xlabel("Gradient step (game index proxy)")
+    # ------------------------------------------------------------------
+    loss = data["losses"]
+    plt.figure(figsize=(9, 4))
+    plt.plot(games, loss, alpha=0.25, color="tomato")
+    plt.plot(games, _rolling(loss), color="tomato", label="rolling mean")
+    plt.xlabel("Gradient-step proxy (game index)")
     plt.ylabel("MSE TD loss")
     plt.title(f"Loss Curve — {tag}")
     plt.legend()
+    plt.tight_layout()
     _save("loss_curve.png")
 
     return produced

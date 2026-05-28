@@ -20,21 +20,22 @@ class SnapshotMetadata:
     version_id: str
     board_size: int
     weights_path: str
+    run_id: str = "run_001"    # which training run produced this snapshot
 
     # Provenance
-    created_at: str
-    games_trained: int
-    gradient_steps: int
-    epsilon_at_freeze: float
-    parent_run_id: str
-    parent_version_id: Optional[str]
+    created_at: str = ""
+    games_trained: int = 0
+    gradient_steps: int = 0
+    epsilon_at_freeze: float = 0.0
+    parent_run_id: str = ""
+    parent_version_id: Optional[str] = None
 
     # Performance
-    win_rate_vs_random: Optional[float]
-    win_rate_vs_heuristic: Optional[float]
-    win_rate_vs_self: Optional[float]
-    elo_rating: Optional[float]
-    mean_episode_length: Optional[float]
+    win_rate_vs_random: Optional[float] = None
+    win_rate_vs_heuristic: Optional[float] = None
+    win_rate_vs_self: Optional[float] = None
+    elo_rating: Optional[float] = None
+    mean_episode_length: Optional[float] = None
 
     # History
     training_history: list[TrainingHistoryEntry] = field(default_factory=list)
@@ -58,4 +59,7 @@ def load_metadata(path: Path) -> SnapshotMetadata:
     d = json.loads(Path(path).read_text())
     history_raw = d.pop("training_history", [])
     history = [TrainingHistoryEntry(**e) for e in history_raw]
+    # Strip unknown keys so old metadata files don't break
+    known = {f.name for f in SnapshotMetadata.__dataclass_fields__.values()}
+    d = {k: v for k, v in d.items() if k in known}
     return SnapshotMetadata(**d, training_history=history)

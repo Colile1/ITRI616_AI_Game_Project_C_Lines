@@ -1,0 +1,3 @@
+game,epsilon,lr,loss,win_rate_vs_random,win_rate_vs_heuristic,mean_ep_len,snapshot
+0,1.0000,1.00e-03,0.000000,0.5500,0.4800,64.0,
+9,0.9983,2.50e-04,0.001223,0.5600,0.5200,64.0,

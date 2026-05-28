@@ -1,4 +1,4 @@
-"""Freeze, load, and clone DQN agents as versioned snapshots."""
+"""Freeze, load, and clone DQN agents as versioned snapshots (run-aware)."""
 
 from __future__ import annotations
 import copy
@@ -17,14 +17,10 @@ from src.versioning.registry import register, next_version_id
 
 def _difficulty_band(games_trained: int, total_games: int) -> str:
     frac = games_trained / max(total_games, 1)
-    if frac >= 1.0:
-        return "master"
-    elif frac >= 0.75:
-        return "hard"
-    elif frac >= 0.50:
-        return "medium"
-    elif frac >= 0.25:
-        return "easy"
+    if frac >= 1.0:   return "master"
+    elif frac >= 0.75: return "hard"
+    elif frac >= 0.50: return "medium"
+    elif frac >= 0.25: return "easy"
     return "novice"
 
 
@@ -38,24 +34,25 @@ def freeze(
     game_idx: int,
     eval_stats: dict,
     board_size: int,
+    run_id: str,
     parent_run_id: Optional[str] = None,
     parent_version_id: Optional[str] = None,
     gradient_steps: int = 0,
     history: Optional[list[TrainingHistoryEntry]] = None,
+    models_dir: Path = MODELS_DIR,
 ) -> SnapshotMetadata:
-    """Serialise *agent* to disk and register the snapshot. Returns metadata."""
-    version_id = next_version_id(board_size)
-    size_dir = MODELS_DIR / f"size_{board_size:02d}" / version_id
-    size_dir.mkdir(parents=True, exist_ok=True)
+    """Serialise *agent* to disk under models/size_NN/run_NNN/gen_NNN/ and register."""
+    version_id = next_version_id(board_size, run_id, models_dir)
+    snap_dir = models_dir / f"size_{board_size:02d}" / run_id / version_id
+    snap_dir.mkdir(parents=True, exist_ok=True)
 
-    weights_path = size_dir / "weights.pt"
+    weights_path = snap_dir / "weights.pt"
     torch.save(agent.state_dict(), weights_path)
 
     band = _difficulty_band(game_idx, TRAINING_GAMES)
-    existing_count = len([
-        p for p in (MODELS_DIR / f"size_{board_size:02d}").iterdir()
-        if p.is_dir()
-    ]) - 1  # -1 because current dir was just created
+    from src.versioning.registry import list_by_size_run
+    run_snaps = list_by_size_run(board_size, run_id, models_dir)
+    existing_count = max(0, len(run_snaps))
 
     new_entry = TrainingHistoryEntry(
         games_trained=game_idx,
@@ -66,6 +63,7 @@ def freeze(
 
     meta = SnapshotMetadata(
         version_id=version_id,
+        run_id=run_id,
         board_size=board_size,
         weights_path=str(weights_path),
         created_at=datetime.now(timezone.utc).isoformat(),
@@ -80,20 +78,24 @@ def freeze(
         elo_rating=eval_stats.get("elo_rating"),
         mean_episode_length=eval_stats.get("mean_episode_length"),
         training_history=full_history,
-        friendly_name=_friendly_name(band, max(existing_count, 0)),
+        friendly_name=_friendly_name(band, existing_count),
         difficulty_band=band,
         model_version=MODEL_VERSION,
     )
 
-    save_metadata(meta, size_dir / "metadata.json")
-    register(meta)
+    save_metadata(meta, snap_dir / "metadata.json")
+    register(meta, models_dir)
     return meta
 
 
-def load_snapshot(board_size: int, version_id: str) -> DQNAgent:
+def load_snapshot(
+    board_size: int, version_id: str,
+    run_id: Optional[str] = None,
+    models_dir: Path = MODELS_DIR,
+) -> DQNAgent:
     """Load a frozen snapshot as a greedy eval-only agent."""
     from src.versioning.registry import get
-    meta = get(board_size, version_id)
+    meta = get(board_size, version_id, run_id=run_id, models_dir=models_dir)
     agent = DQNAgent(board_size, eval_only=True)
     sd = torch.load(meta.weights_path, map_location="cpu", weights_only=True)
     agent.load_state_dict(sd)
