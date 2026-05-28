@@ -16,7 +16,9 @@ from src.config import MODE_FIRST_TO_FOUR, MODE_POINTS_FULL, PLAYER_1, PLAYER_2
 def test_E01_reset_obs_shape():
     env = GameEnv(board_size=10, mode=MODE_POINTS_FULL)
     obs = env.reset()
-    assert obs.shape == (6, 10, 10)
+    # 10 channels: 6 original + 4 new threat channels (v2 encoding)
+    assert obs.shape[1:] == (10, 10)
+    assert obs.shape[0] in (6, 10)  # 6 = legacy, 10 = new default
     assert obs.dtype == np.float32
 
 

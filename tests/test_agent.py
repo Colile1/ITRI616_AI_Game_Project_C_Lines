@@ -146,11 +146,12 @@ def test_A06_dqn_eps0_legal():
 def test_A07_dqn_update_returns_loss():
     from src.agents.dqn_agent import DQNAgent
     from src.training.replay_buffer import ReplayBuffer
+    from src.config import STATE_CHANNELS_V2
     import numpy as np
     n = 8
     agent = DQNAgent(board_size=n)
-    buf = ReplayBuffer(100)
-    s = np.zeros((6, n, n), dtype=np.float32)
+    buf = ReplayBuffer(100, use_augmentation=False)  # disable aug for determinism
+    s = np.zeros((STATE_CHANNELS_V2, n, n), dtype=np.float32)
     m = np.ones(n * n, dtype=bool)
     for i in range(64):
         buf.push(s, i % (n*n), 0.1, s, False, m)
