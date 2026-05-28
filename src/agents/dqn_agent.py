@@ -8,8 +8,11 @@ import torch.nn as nn
 import torch.optim as optim
 
 from src.agents.base_agent import BaseAgent
-from src.training.network import DQNNetwork
-from src.config import LR, GAMMA, GRADIENT_CLIP, EPS_START
+from src.training.network import build_network
+from src.config import (
+    LR, GAMMA, GRADIENT_CLIP, EPS_START,
+    STATE_CHANNELS_V2, NETWORK_ARCH,
+)
 
 _NEG_INF = -1e9
 
@@ -17,12 +20,20 @@ _NEG_INF = -1e9
 class DQNAgent(BaseAgent):
     """Online + target DQN. Call update() each gradient step."""
 
-    def __init__(self, board_size: int, eval_only: bool = False):
+    def __init__(
+        self,
+        board_size: int,
+        eval_only: bool = False,
+        in_channels: int = STATE_CHANNELS_V2,
+        network_arch: str = NETWORK_ARCH,
+    ):
         self.board_size = board_size
+        self.in_channels = in_channels
+        self.network_arch = network_arch
         self.epsilon = EPS_START
         self._device = torch.device("cpu")
 
-        self._online = DQNNetwork(board_size).to(self._device)
+        self._online = build_network(board_size, in_channels, network_arch).to(self._device)
         if not eval_only:
             self._target = copy.deepcopy(self._online)
             self._target.eval()
@@ -41,19 +52,27 @@ class DQNAgent(BaseAgent):
             return int(np.random.choice(legal_indices))
         return self._greedy_action(obs, legal_mask)
 
+    def q_values(self, obs: np.ndarray) -> np.ndarray:
+        """Return raw Q-values for all cells (for use as MCTS priors)."""
+        self._online.eval()
+        with torch.no_grad():
+            t = torch.from_numpy(obs).unsqueeze(0).to(self._device)
+            q = self._online(t).squeeze(0).cpu().numpy()
+        self._online.train()
+        return q
+
     # ------------------------------------------------------------------
     # Training utilities
     # ------------------------------------------------------------------
 
     def update(self, batch: dict[str, np.ndarray]) -> float:
-        """One gradient step. Returns scalar TD loss."""
         assert self._target is not None, "Cannot update an eval_only agent"
-        states = torch.from_numpy(batch["states"]).to(self._device)
-        actions = torch.from_numpy(batch["actions"]).long().to(self._device)
-        rewards = torch.from_numpy(batch["rewards"]).to(self._device)
+        states      = torch.from_numpy(batch["states"]).to(self._device)
+        actions     = torch.from_numpy(batch["actions"]).long().to(self._device)
+        rewards     = torch.from_numpy(batch["rewards"]).to(self._device)
         next_states = torch.from_numpy(batch["next_states"]).to(self._device)
-        dones = torch.from_numpy(batch["dones"]).to(self._device)
-        legal_next = torch.from_numpy(batch["legal_masks_next"]).to(self._device)
+        dones       = torch.from_numpy(batch["dones"]).to(self._device)
+        legal_next  = torch.from_numpy(batch["legal_masks_next"]).to(self._device)
 
         with torch.no_grad():
             q_next = self._target(next_states)

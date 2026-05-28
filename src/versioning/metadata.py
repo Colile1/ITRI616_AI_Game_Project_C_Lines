@@ -1,4 +1,4 @@
-"""SnapshotMetadata dataclass and JSON persistence."""
+"""SnapshotMetadata dataclass and JSON persistence (schema v2)."""
 
 from __future__ import annotations
 import json
@@ -20,7 +20,7 @@ class SnapshotMetadata:
     version_id: str
     board_size: int
     weights_path: str
-    run_id: str = "run_001"    # which training run produced this snapshot
+    run_id: str = "run_001"
 
     # Provenance
     created_at: str = ""
@@ -45,8 +45,15 @@ class SnapshotMetadata:
     difficulty_band: str = "novice"
     notes: str = ""
 
-    # Compatibility
-    model_version: int = 1
+    # Compatibility — v1 field kept for backward compat
+    model_version: int = 2
+
+    # v2 additions (unified upgrade plan)
+    state_channels: int = 6              # 6 = legacy, 10 = new encoding
+    network_arch: str = "plain_v1"       # "plain_v1" or "resnet_v1"
+    parent_schedule_path: Optional[str] = None
+    human_games_seen: int = 0
+    benchmark_summary: Optional[dict] = None   # {wins, losses, draws} vs alpha-beta
 
 
 def save_metadata(meta: SnapshotMetadata, path: Path) -> None:
@@ -59,7 +66,6 @@ def load_metadata(path: Path) -> SnapshotMetadata:
     d = json.loads(Path(path).read_text())
     history_raw = d.pop("training_history", [])
     history = [TrainingHistoryEntry(**e) for e in history_raw]
-    # Strip unknown keys so old metadata files don't break
-    known = {f.name for f in SnapshotMetadata.__dataclass_fields__.values()}
+    known = {f for f in SnapshotMetadata.__dataclass_fields__}
     d = {k: v for k, v in d.items() if k in known}
     return SnapshotMetadata(**d, training_history=history)

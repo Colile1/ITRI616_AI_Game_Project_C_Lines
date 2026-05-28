@@ -152,3 +152,70 @@ def generate_all_plots(
     _save("loss_curve.png")
 
     return produced
+
+
+def generate_benchmark_plot(
+    benchmark_csv_path: Path | str,
+    board_size: int,
+    out_dir: Path | str,
+    rolling_window: int = 100,
+) -> Path | None:
+    """Read benchmark_log.csv and write benchmark_curve.png.
+
+    x-axis: training game index
+    y-axis: rolling win rate vs benchmark (one line per benchmark name)
+    """
+    import csv
+
+    benchmark_csv_path = Path(benchmark_csv_path)
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if not benchmark_csv_path.exists():
+        return None
+
+    rows: list[dict] = []
+    with open(benchmark_csv_path) as f:
+        for row in csv.DictReader(f):
+            try:
+                rows.append({
+                    "game":   int(row["training_game"]),
+                    "result": float(row["benchmark_result"]),
+                    "name":   row["benchmark_name"],
+                })
+            except (KeyError, ValueError):
+                continue
+
+    if not rows:
+        return None
+
+    # Group by benchmark name
+    by_name: dict[str, tuple[list[int], list[float]]] = {}
+    for r in rows:
+        name = r["name"]
+        if name not in by_name:
+            by_name[name] = ([], [])
+        by_name[name][0].append(r["game"])
+        by_name[name][1].append(r["result"])
+
+    plt.figure(figsize=(10, 5))
+    colors = ["royalblue", "darkorange", "seagreen", "tomato"]
+    for i, (name, (games, results)) in enumerate(by_name.items()):
+        g = np.array(games)
+        r = np.array(results)
+        color = colors[i % len(colors)]
+        plt.scatter(g, r, alpha=0.10, s=6, color=color)
+        plt.plot(g, _rolling(r, rolling_window), color=color, label=f"vs {name} (rolling-{rolling_window})")
+
+    plt.axhline(0.50, color="grey", linestyle="--", linewidth=0.8, label="50% baseline")
+    plt.ylim(-0.05, 1.05)
+    plt.xlabel("Training game")
+    plt.ylabel(f"Win rate (rolling {rolling_window})")
+    plt.title(f"Benchmark Curve — Board {board_size}×{board_size}")
+    plt.legend()
+    plt.tight_layout()
+
+    out_path = out_dir / "benchmark_curve.png"
+    plt.savefig(out_path, dpi=120, bbox_inches="tight")
+    plt.close()
+    return out_path

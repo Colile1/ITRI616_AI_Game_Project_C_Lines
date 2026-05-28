@@ -10,14 +10,17 @@ from typing import Optional
 import torch
 
 from src.agents.dqn_agent import DQNAgent
-from src.config import MODELS_DIR, FRIENDLY_NAMES, TRAINING_GAMES, MODEL_VERSION
+from src.config import (
+    MODELS_DIR, FRIENDLY_NAMES, TRAINING_GAMES, MODEL_VERSION,
+    STATE_CHANNELS_V2, NETWORK_ARCH,
+)
 from src.versioning.metadata import SnapshotMetadata, TrainingHistoryEntry, save_metadata
 from src.versioning.registry import register, next_version_id
 
 
 def _difficulty_band(games_trained: int, total_games: int) -> str:
     frac = games_trained / max(total_games, 1)
-    if frac >= 1.0:   return "master"
+    if frac >= 1.0:    return "master"
     elif frac >= 0.75: return "hard"
     elif frac >= 0.50: return "medium"
     elif frac >= 0.25: return "easy"
@@ -40,6 +43,7 @@ def freeze(
     gradient_steps: int = 0,
     history: Optional[list[TrainingHistoryEntry]] = None,
     models_dir: Path = MODELS_DIR,
+    human_games_seen: int = 0,
 ) -> SnapshotMetadata:
     """Serialise *agent* to disk under models/size_NN/run_NNN/gen_NNN/ and register."""
     version_id = next_version_id(board_size, run_id, models_dir)
@@ -81,6 +85,9 @@ def freeze(
         friendly_name=_friendly_name(band, existing_count),
         difficulty_band=band,
         model_version=MODEL_VERSION,
+        state_channels=getattr(agent, "in_channels", STATE_CHANNELS_V2),
+        network_arch=getattr(agent, "network_arch", NETWORK_ARCH),
+        human_games_seen=human_games_seen,
     )
 
     save_metadata(meta, snap_dir / "metadata.json")
@@ -96,7 +103,11 @@ def load_snapshot(
     """Load a frozen snapshot as a greedy eval-only agent."""
     from src.versioning.registry import get
     meta = get(board_size, version_id, run_id=run_id, models_dir=models_dir)
-    agent = DQNAgent(board_size, eval_only=True)
+
+    in_channels = getattr(meta, "state_channels", 6)
+    network_arch = getattr(meta, "network_arch", "plain_v1")
+
+    agent = DQNAgent(board_size, eval_only=True, in_channels=in_channels, network_arch=network_arch)
     sd = torch.load(meta.weights_path, map_location="cpu", weights_only=True)
     agent.load_state_dict(sd)
     agent.set_epsilon(0.0)
@@ -105,7 +116,9 @@ def load_snapshot(
 
 def clone_agent(agent: DQNAgent) -> DQNAgent:
     """Deep-copy a training agent for use as self-play opponent."""
-    new_agent = DQNAgent(agent.board_size, eval_only=True)
+    in_ch = getattr(agent, "in_channels", STATE_CHANNELS_V2)
+    arch  = getattr(agent, "network_arch", NETWORK_ARCH)
+    new_agent = DQNAgent(agent.board_size, eval_only=True, in_channels=in_ch, network_arch=arch)
     new_agent.load_state_dict(copy.deepcopy(agent.state_dict()))
     new_agent.set_epsilon(0.0)
     return new_agent

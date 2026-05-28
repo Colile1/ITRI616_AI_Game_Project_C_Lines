@@ -115,6 +115,70 @@ FRIENDLY_NAMES = {
 }
 
 # ---------------------------------------------------------------------------
+# State encoding
+# ---------------------------------------------------------------------------
+STATE_CHANNELS_V1 = 6    # original 6-channel encoding
+STATE_CHANNELS_V2 = 10   # 10-channel encoding (adds open-4, closed-4, win/loss cells)
+STATE_CHANNELS = STATE_CHANNELS_V2  # default for new training
+
+# ---------------------------------------------------------------------------
+# Network architecture
+# ---------------------------------------------------------------------------
+NUM_RES_BLOCKS = 4
+RES_CHANNELS = 64
+NETWORK_ARCH = "resnet_v1"   # "resnet_v1" or "plain_v1"
+
+# ---------------------------------------------------------------------------
+# Symmetry augmentation (D4 dihedral group on square board)
+# ---------------------------------------------------------------------------
+USE_SYMMETRY_AUGMENTATION = True   # apply 8-fold augmentation at sample time
+
+# ---------------------------------------------------------------------------
+# MCTS (used by MCTSAgent at inference)
+# ---------------------------------------------------------------------------
+MCTS_SIMS_BY_CONTEXT: dict[str, int] = {
+    "self_play":       200,
+    "snapshot_play":   200,
+    "alphabeta":       200,
+    "human_play":       80,   # keep move latency tolerable for humans
+    "benchmark_eval":  400,
+}
+MCTS_C_PUCT = 1.4
+MCTS_LEAF_EVAL = "q_value"   # or "random_rollout"
+MCTS_MAX_THINK_SEC = 1.5     # hard wall-clock cap per move
+
+# ---------------------------------------------------------------------------
+# Alpha-beta benchmark agent
+# ---------------------------------------------------------------------------
+BENCHMARK_DEPTH_BY_SIZE: dict[int, int] = {8: 4, 9: 4, 10: 3, 11: 3, 12: 3}
+BENCHMARK_EVAL_WEIGHTS: dict[str, float] = {
+    "open_3": 1.0,
+    "open_4": 5.0,
+    "line_score": 1.0,
+    "mobility": 0.1,
+}
+
+# ---------------------------------------------------------------------------
+# Weighted replay buffer
+# ---------------------------------------------------------------------------
+MAX_REPLAY_WEIGHT = 20.0     # cap to prevent any transition from dominating
+DEFAULT_SOURCE_WEIGHTS: dict[str, float] = {
+    "self":       1.0,
+    "pool":       1.0,
+    "random":     0.5,
+    "heuristic":  1.0,
+    "alphabeta":  2.0,
+    "human":      5.0,
+    "demo":      10.0,
+}
+
+# ---------------------------------------------------------------------------
+# Benchmark logging
+# ---------------------------------------------------------------------------
+BENCHMARK_EVERY_N_GAMES_SMALL = 1   # board sizes <= 10
+BENCHMARK_EVERY_N_GAMES_LARGE = 5   # board sizes >= 11
+
+# ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
 CELL_PX = 56

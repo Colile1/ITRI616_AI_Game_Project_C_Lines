@@ -48,8 +48,10 @@ def play_episode(
         if not mask.any():
             break
 
-        # HeuristicAgent needs board reference
+        # Agents that need board reference (HeuristicAgent, AlphaBetaAgent, MCTSAgent)
         if isinstance(agent, HeuristicAgent):
+            agent.set_board(env.board)
+        elif hasattr(agent, "set_board"):
             agent.set_board(env.board)
 
         action = agent.select_action(obs, mask)
