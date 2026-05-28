@@ -28,18 +28,33 @@ def generate_all_plots(
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    games, epsilons, losses, win_rates, ep_lens = [], [], [], [], []
+    all_rows: list[dict] = []
     with open(log_csv_path) as f:
         reader = csv.DictReader(f)
         for row in reader:
             try:
-                games.append(int(row["game"]))
-                epsilons.append(float(row["epsilon"]))
-                losses.append(float(row["loss"]))
-                win_rates.append(float(row["win_rate_vs_random"]))
-                ep_lens.append(float(row["mean_ep_len"]))
+                _ = int(row["game"])
+                all_rows.append(row)
             except (KeyError, ValueError):
                 continue
+
+    # Extract the last complete training run (starting from the final game=0 reset)
+    last_start = 0
+    for i, row in enumerate(all_rows):
+        if int(row["game"]) == 0:
+            last_start = i
+    all_rows = all_rows[last_start:]
+
+    games, epsilons, losses, win_rates, ep_lens = [], [], [], [], []
+    for row in all_rows:
+        try:
+            games.append(int(row["game"]))
+            epsilons.append(float(row["epsilon"]))
+            losses.append(float(row["loss"]))
+            win_rates.append(float(row["win_rate_vs_random"]))
+            ep_lens.append(float(row["mean_ep_len"]))
+        except (KeyError, ValueError):
+            continue
 
     games = np.array(games)
     tag = f"Board {board_size}×{board_size}"
