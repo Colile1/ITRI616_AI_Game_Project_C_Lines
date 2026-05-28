@@ -83,7 +83,7 @@ SELF_PLAY_MIX_PROB = 0.5
 RECENT_POOL_BIAS = 0.7      # prob of sampling from top-5 recent snapshots (P4)
 RECENT_POOL_TOP_N = 5       # how many "recent" snapshots count as strong (P4)
 
-SNAPSHOT_INTERVAL = 500     # ↓ from 1000 — finer-grained pool diversity (P8)
+SNAPSHOT_INTERVAL = 1000     # ↓ from 1000 — finer-grained pool diversity (P8)
 MAX_POOL_SIZE = 20
 
 EVAL_INTERVAL = 100         # ↓ from 500 — 10× more curve resolution (P1)
