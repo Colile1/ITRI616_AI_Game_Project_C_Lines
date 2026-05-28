@@ -67,7 +67,7 @@ def freeze(
     meta = SnapshotMetadata(
         version_id=version_id,
         board_size=board_size,
-        weights_path=str(weights_path.relative_to(Path.cwd()).as_posix()),
+        weights_path=str(weights_path),
         created_at=datetime.now(timezone.utc).isoformat(),
         games_trained=game_idx,
         gradient_steps=gradient_steps,

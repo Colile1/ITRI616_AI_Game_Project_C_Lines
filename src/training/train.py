@@ -6,6 +6,7 @@ import csv
 import uuid
 from pathlib import Path
 
+import src.config as _cfg
 from src.agents.dqn_agent import DQNAgent
 from src.agents.random_agent import RandomAgent
 from src.config import (
@@ -14,7 +15,7 @@ from src.config import (
     EPS_START, EPS_END, EPS_DECAY_GAMES,
     TARGET_SYNC_STEPS, EVAL_INTERVAL, EVAL_GAMES,
     SNAPSHOT_INTERVAL, MAX_POOL_SIZE, WARMUP_GAMES,
-    SELF_PLAY_MIX_PROB, TRAINING_LOG_PATH, LOGS_DIR,
+    SELF_PLAY_MIX_PROB,
 )
 from src.game.env import GameEnv
 from src.training.replay_buffer import ReplayBuffer
@@ -46,7 +47,7 @@ def train(
     run_id: str | None = None,
 ) -> None:
     run_id = run_id or str(uuid.uuid4())
-    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    _cfg.LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
     agent = DQNAgent(board_size)
     buffer = ReplayBuffer(REPLAY_CAPACITY)
@@ -59,9 +60,7 @@ def train(
     global_step = 0
     last_loss = 0.0
 
-    log_path = Path(str(TRAINING_LOG_PATH).replace(
-        "training_log.csv", f"training_log_size{board_size}.csv"
-    ))
+    log_path = _cfg.LOGS_DIR / f"training_log_size{board_size}.csv"
     write_header = not log_path.exists()
     log_file = log_path.open("a", newline="")
     writer = csv.writer(log_file)
