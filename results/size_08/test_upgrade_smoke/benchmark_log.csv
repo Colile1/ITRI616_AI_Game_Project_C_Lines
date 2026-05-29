@@ -1,1 +1,11 @@
 training_game,phase_name,benchmark_name,benchmark_result,benchmark_score_diff,benchmark_episode_length,benchmark_seed,wall_clock_sec
+0,auto,alphabeta_d4,0.0,-1.0125,64,0,3274.875
+0,auto,alphabeta_d4,0.0,-1.0125,64,0,3264.422
+1,auto,alphabeta_d4,0.0,-1.2125,64,1000,5328.860
+1,auto,alphabeta_d4,0.0,-1.2125,64,1000,5285.515
+2,auto,alphabeta_d4,1.0,1.1125,64,2000,3548.000
+2,auto,alphabeta_d4,1.0,1.1125,64,2000,3534.406
+3,auto,alphabeta_d4,0.0,-1.3000,64,3000,3233.922
+3,auto,alphabeta_d4,0.0,-1.3000,64,3000,3175.750
+4,auto,alphabeta_d4,1.0,1.0125,64,4000,1310.032
+4,auto,alphabeta_d4,1.0,1.0125,64,4000,1319.781
