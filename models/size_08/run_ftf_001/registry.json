@@ -1,0 +1,41 @@
+[
+  {
+    "version_id": "gen_001",
+    "run_id": "run_ftf_001",
+    "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\run_ftf_001\\gen_001\\weights.pt",
+    "friendly_name": "Apprentice",
+    "difficulty_band": "novice",
+    "games_trained": 1000,
+    "win_rate_vs_random": 0.55,
+    "win_rate_vs_heuristic": 0.0,
+    "elo_rating": null,
+    "created_at": "2026-05-29T06:08:18.431780+00:00",
+    "model_version": 2
+  },
+  {
+    "version_id": "gen_002",
+    "run_id": "run_ftf_001",
+    "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\run_ftf_001\\gen_002\\weights.pt",
+    "friendly_name": "Beginner",
+    "difficulty_band": "novice",
+    "games_trained": 2000,
+    "win_rate_vs_random": 0.45,
+    "win_rate_vs_heuristic": 0.0,
+    "elo_rating": null,
+    "created_at": "2026-05-29T06:45:54.136570+00:00",
+    "model_version": 2
+  },
+  {
+    "version_id": "gen_003",
+    "run_id": "run_ftf_001",
+    "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\run_ftf_001\\gen_003\\weights.pt",
+    "friendly_name": "Improver",
+    "difficulty_band": "easy",
+    "games_trained": 3000,
+    "win_rate_vs_random": 0.44,
+    "win_rate_vs_heuristic": 0.0,
+    "elo_rating": null,
+    "created_at": "2026-05-29T07:22:46.257896+00:00",
+    "model_version": 2
+  }
+]
