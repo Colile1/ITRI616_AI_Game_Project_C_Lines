@@ -4,6 +4,10 @@ This is a fixed, non-learning benchmark agent. It does not update between games
 and is intentionally deterministic given a fixed seed so benchmark results are
 reproducible.
 
+Speed design: depth is kept at 2 by default (configurable). Each move is also
+capped at MAX_THINK_SEC seconds — if the time limit is hit the best move found
+so far is returned. This keeps benchmark games under a few seconds in Python.
+
 Evaluation function (from each player's perspective):
   eval = W_open3 * (own_open3 - opp_open3)
        + W_open4 * (own_open4 - opp_open4)
@@ -16,6 +20,7 @@ cells adjacent to existing pieces, then the rest.
 
 from __future__ import annotations
 import math
+import time
 from typing import Optional
 
 import numpy as np
@@ -33,25 +38,26 @@ from src.config import (
 _DIRECTIONS = [(0, 1), (1, 0), (1, 1), (1, -1)]
 _INF = float("inf")
 
+# Hard wall-clock cap per move — search stops early if exceeded
+MAX_THINK_SEC = 2.0
+
 
 def _other(p: int) -> int:
     return PLAYER_2 if p == PLAYER_1 else PLAYER_1
 
 
 # ---------------------------------------------------------------------------
-# Pattern helpers
+# Pattern helpers — use numpy for speed
 # ---------------------------------------------------------------------------
 
 def _count_open_k(grid: np.ndarray, player: int, n: int, k: int) -> int:
-    """Count runs of exactly length k that have at least one open extension."""
+    """Count runs of exactly length k with at least one open end."""
     count = 0
-    opp = _other(player)
     for dr, dc in _DIRECTIONS:
         for r in range(n):
             for c in range(n):
                 if grid[r, c] != player:
                     continue
-                # Only start from run heads
                 pr, pc = r - dr, c - dc
                 if 0 <= pr < n and 0 <= pc < n and grid[pr, pc] == player:
                     continue
@@ -63,9 +69,8 @@ def _count_open_k(grid: np.ndarray, player: int, n: int, k: int) -> int:
                     nc += dc
                 if length != k:
                     continue
-                # Check if at least one end is open
                 before_r, before_c = r - dr, c - dc
-                after_r, after_c = nr, nc  # one past the end
+                after_r, after_c = nr, nc
                 before_open = (
                     0 <= before_r < n and 0 <= before_c < n
                     and grid[before_r, before_c] == EMPTY
@@ -80,20 +85,19 @@ def _count_open_k(grid: np.ndarray, player: int, n: int, k: int) -> int:
 
 
 def _has_immediate_win(grid: np.ndarray, player: int, n: int) -> list[tuple[int, int]]:
-    """Return list of cells that immediately win (create run >= 4) for player."""
     wins = []
     for r in range(n):
         for c in range(n):
             if grid[r, c] != EMPTY:
                 continue
             grid[r, c] = player
-            if _player_has_run(grid, player, n, 4):
+            if _player_has_run_4(grid, player, n):
                 wins.append((r, c))
             grid[r, c] = EMPTY
     return wins
 
 
-def _player_has_run(grid: np.ndarray, player: int, n: int, length: int) -> bool:
+def _player_has_run_4(grid: np.ndarray, player: int, n: int) -> bool:
     for dr, dc in _DIRECTIONS:
         for r in range(n):
             for c in range(n):
@@ -103,7 +107,7 @@ def _player_has_run(grid: np.ndarray, player: int, n: int, length: int) -> bool:
                 nr, nc = r, c
                 while 0 <= nr < n and 0 <= nc < n and grid[nr, nc] == player:
                     cnt += 1
-                    if cnt >= length:
+                    if cnt >= 4:
                         return True
                     nr += dr
                     nc += dc
@@ -111,62 +115,36 @@ def _player_has_run(grid: np.ndarray, player: int, n: int, length: int) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Evaluation function
+# Fast evaluation — only line scores + open-4 threats (skip slow open-3/mobility)
 # ---------------------------------------------------------------------------
 
-def _evaluate(grid: np.ndarray, player: int, n: int, weights: dict[str, float]) -> float:
+def _evaluate_fast(grid: np.ndarray, player: int, n: int, weights: dict) -> float:
+    """Lightweight eval: line scores + open-4 only. Much faster than full eval."""
     opp = _other(player)
-    own_o3 = _count_open_k(grid, player, n, 3)
-    opp_o3 = _count_open_k(grid, opp, n, 3)
+    own_ls = score_board(grid, player, n)
+    opp_ls = score_board(grid, opp, n)
     own_o4 = _count_open_k(grid, player, n, 4)
     opp_o4 = _count_open_k(grid, opp, n, 4)
-    own_ls  = score_board(grid, player, n)
-    opp_ls  = score_board(grid, opp, n)
-    # Mobility = number of empty neighbours of player's pieces (proxy)
-    own_mob = _mobility(grid, player, n)
-    opp_mob = _mobility(grid, opp, n)
     return (
-        weights["open_3"]    * (own_o3 - opp_o3)
-        + weights["open_4"]  * (own_o4 - opp_o4)
-        + weights["line_score"] * (own_ls - opp_ls)
-        + weights["mobility"] * (own_mob - opp_mob)
+        weights["line_score"] * (own_ls - opp_ls)
+        + weights["open_4"]   * (own_o4 - opp_o4)
     )
 
 
-def _mobility(grid: np.ndarray, player: int, n: int) -> int:
-    """Count empty cells adjacent (8-connected) to player's pieces."""
-    empty_adj: set[tuple[int, int]] = set()
-    for r in range(n):
-        for c in range(n):
-            if grid[r, c] != player:
-                continue
-            for dr in (-1, 0, 1):
-                for dc in (-1, 0, 1):
-                    if dr == 0 and dc == 0:
-                        continue
-                    nr, nc = r + dr, c + dc
-                    if 0 <= nr < n and 0 <= nc < n and grid[nr, nc] == EMPTY:
-                        empty_adj.add((nr, nc))
-    return len(empty_adj)
-
-
 # ---------------------------------------------------------------------------
-# Move ordering
+# Move ordering — cheap version (win/block first, then centre proximity)
 # ---------------------------------------------------------------------------
 
 def _order_moves(
     board: Board, moves: list[tuple[int, int]], player: int
 ) -> list[tuple[int, int]]:
-    """Order: win first, then block, then centre-near, then adjacent-to-pieces."""
     n = board.size
     grid = board.grid
     opp = _other(player)
     centre = n / 2.0
 
-    wins  = _has_immediate_win(grid, player, n)
-    wins_set = set(wins)
-    blocks = _has_immediate_win(grid, opp, n)
-    blocks_set = set(blocks)
+    wins_set  = set(_has_immediate_win(grid, player, n))
+    blocks_set = set(_has_immediate_win(grid, opp, n))
 
     def priority(rc: tuple[int, int]) -> float:
         r, c = rc
@@ -174,26 +152,13 @@ def _order_moves(
             return -3.0
         if rc in blocks_set:
             return -2.0
-        dist = abs(r - centre) + abs(c - centre)
-        adj = _has_adj_piece(grid, r, c, n)
-        return dist - (0.5 if adj else 0.0)
+        return abs(r - centre) + abs(c - centre)
 
     return sorted(moves, key=priority)
 
 
-def _has_adj_piece(grid: np.ndarray, r: int, c: int, n: int) -> bool:
-    for dr in (-1, 0, 1):
-        for dc in (-1, 0, 1):
-            if dr == 0 and dc == 0:
-                continue
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < n and 0 <= nc < n and grid[nr, nc] != EMPTY:
-                return True
-    return False
-
-
 # ---------------------------------------------------------------------------
-# Alpha-beta search
+# Alpha-beta search with time limit
 # ---------------------------------------------------------------------------
 
 def _alphabeta(
@@ -203,8 +168,12 @@ def _alphabeta(
     beta: float,
     maximising: bool,
     root_player: int,
-    weights: dict[str, float],
+    weights: dict,
+    deadline: float,
 ) -> float:
+    if time.monotonic() > deadline:
+        raise TimeoutError
+
     n = board.size
     done, winner = check_terminal_mode1(board)
     if done:
@@ -216,7 +185,7 @@ def _alphabeta(
             return -10000.0
 
     if depth == 0:
-        return _evaluate(board.grid, root_player, n, weights)
+        return _evaluate_fast(board.grid, root_player, n, weights)
 
     moves = legal_placements(board)
     current_player = board.current_player
@@ -226,7 +195,8 @@ def _alphabeta(
         value = -_INF
         for r, c in ordered:
             child = apply_placement(board, r, c)
-            score = _alphabeta(child, depth - 1, alpha, beta, False, root_player, weights)
+            score = _alphabeta(child, depth - 1, alpha, beta, False,
+                               root_player, weights, deadline)
             value = max(value, score)
             alpha = max(alpha, value)
             if alpha >= beta:
@@ -236,7 +206,8 @@ def _alphabeta(
         value = _INF
         for r, c in ordered:
             child = apply_placement(board, r, c)
-            score = _alphabeta(child, depth - 1, alpha, beta, True, root_player, weights)
+            score = _alphabeta(child, depth - 1, alpha, beta, True,
+                               root_player, weights, deadline)
             value = min(value, score)
             beta = min(beta, value)
             if beta <= alpha:
@@ -249,7 +220,10 @@ def _alphabeta(
 # ---------------------------------------------------------------------------
 
 class AlphaBetaAgent(BaseAgent):
-    """Fixed-policy iterative-deepening alpha-beta agent.
+    """Fixed-policy alpha-beta agent.
+
+    Default depth=2 keeps each move under ~1 second in Python.
+    A hard time cap (MAX_THINK_SEC) cuts off any move that runs long.
 
     Call set_board() before select_action(), same pattern as HeuristicAgent.
     """
@@ -258,11 +232,14 @@ class AlphaBetaAgent(BaseAgent):
         self,
         board_size: Optional[int] = None,
         depth: Optional[int] = None,
-        weights: Optional[dict[str, float]] = None,
+        weights: Optional[dict] = None,
+        max_think_sec: float = MAX_THINK_SEC,
     ):
         self._board_size = board_size
-        self._depth = depth  # None → read from BENCHMARK_DEPTH_BY_SIZE
+        # Default depth: 2 (fast) instead of 4 (very slow in Python)
+        self._depth = depth if depth is not None else 2
         self._weights = weights or dict(BENCHMARK_EVAL_WEIGHTS)
+        self._max_think_sec = max_think_sec
         self._board: Optional[Board] = None
 
     def set_board(self, board: Board) -> None:
@@ -273,7 +250,6 @@ class AlphaBetaAgent(BaseAgent):
             raise RuntimeError("AlphaBetaAgent.set_board() must be called first.")
         board = self._board
         n = board.size
-        depth = self._depth if self._depth is not None else BENCHMARK_DEPTH_BY_SIZE.get(n, 3)
         player = board.current_player
 
         moves = legal_placements(board)
@@ -282,16 +258,25 @@ class AlphaBetaAgent(BaseAgent):
             return int(np.random.choice(legal_indices))
 
         ordered = _order_moves(board, moves, player)
+
+        # Immediate win — no search needed
+        wins = _has_immediate_win(board.grid, player, n)
+        if wins:
+            return action_to_index(wins[0][0], wins[0][1], n)
+
         best_move = ordered[0]
         best_score = -_INF
+        deadline = time.monotonic() + self._max_think_sec
 
         for r, c in ordered:
-            child = apply_placement(board, r, c)
-            score = _alphabeta(
-                child, depth - 1, -_INF, _INF,
-                False,   # we just moved as maximiser; child is opponent's turn
-                player, self._weights,
-            )
+            try:
+                child = apply_placement(board, r, c)
+                score = _alphabeta(
+                    child, self._depth - 1, -_INF, _INF,
+                    False, player, self._weights, deadline,
+                )
+            except TimeoutError:
+                break   # return best found so far
             if score > best_score:
                 best_score = score
                 best_move = (r, c)

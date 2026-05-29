@@ -1,13 +1,18 @@
 """Menu screens: MainMenu, BoardSizePicker, ModePicker, SettingsScreen."""
 
 from __future__ import annotations
+import random
 import pygame
 
 from src.ui.theme import (
     BG_DEEP, BG_TOP, TEXT_BRIGHT, TEXT_MUTED, TEXT_DIM,
-    P1_ACCENT, P2_ACCENT, font, make_frost_surface, draw_button,
+    P1_ACCENT, P1_GLOW, P2_ACCENT, P2_GLOW,
+    font, make_frost_surface, draw_button, draw_card, draw_toggle,
 )
 from src.config import BOARD_SIZES, MODE_FIRST_TO_FOUR, MODE_POINTS_FULL
+
+# Fixed palette for decorative background pieces
+_DECO_COLORS = [P1_ACCENT, P2_ACCENT, P1_GLOW, P2_GLOW, (140, 200, 180), (200, 160, 240)]
 
 
 class MainMenu:
@@ -16,10 +21,32 @@ class MainMenu:
 
     def __init__(self):
         self._hovered: int = -1
+        # Pre-bake decorative circle positions so they're stable each frame
+        rng = random.Random(42)
+        self._deco: list[tuple[float, float, int, tuple, int]] = [
+            (
+                rng.uniform(0.04, 0.96),
+                rng.uniform(0.04, 0.96),
+                rng.randint(7, 26),
+                _DECO_COLORS[rng.randint(0, len(_DECO_COLORS) - 1)],
+                rng.randint(14, 42),
+            )
+            for _ in range(20)
+        ]
 
     def draw(self, surface: pygame.Surface) -> None:
         surface.fill(BG_DEEP)
         w, h = surface.get_size()
+
+        # Decorative scattered pieces in background
+        for xf, yf, radius, color, alpha in self._deco:
+            s = pygame.Surface((radius * 2 + 4, radius * 2 + 4), pygame.SRCALPHA)
+            filled = radius < 14
+            if filled:
+                pygame.draw.circle(s, (*color, alpha), (radius + 2, radius + 2), radius)
+            else:
+                pygame.draw.circle(s, (*color, alpha), (radius + 2, radius + 2), radius, 2)
+            surface.blit(s, (int(w * xf) - radius - 2, int(h * yf) - radius - 2))
 
         title = font("display").render("C_lines", True, TEXT_BRIGHT)
         surface.blit(title, ((w - title.get_width()) // 2, h // 5))
@@ -92,8 +119,9 @@ class BoardSizePicker:
             hovered = i == self._hovered
             color = P1_ACCENT if selected else (TEXT_MUTED if hovered else TEXT_DIM)
             pygame.draw.circle(surface, color, (cx, cy), self.CHIP_R, 0 if selected else 2)
-            label = font("display" if selected else "ui").render(str(sz), True,
-                                                                  BG_DEEP if selected else color)
+            label = font("display" if selected else "ui").render(
+                str(sz), True, BG_DEEP if selected else color
+            )
             surface.blit(label, (cx - label.get_width() // 2, cy - label.get_height() // 2))
 
     def handle_event(self, event: pygame.event.Event, surface: pygame.Surface) -> str | None:
@@ -194,12 +222,13 @@ class ModePicker:
 
 class SettingsScreen:
     TOGGLES = [
-        ("show_legal", "Show legal moves"),
-        ("show_threats", "Show threat highlights"),
+        ("show_legal",    "Show legal moves"),
+        ("show_threats",  "Show threat highlights"),
         ("reduce_motion", "Reduce motion"),
-        ("sound", "Sound (off by default)"),
+        ("sound",         "Sound (off by default)"),
     ]
-    ROW_H = 48
+    ROW_H   = 56
+    CARD_W  = 460
 
     def __init__(self, settings: dict):
         self._settings = settings
@@ -211,34 +240,54 @@ class SettingsScreen:
     def draw(self, surface: pygame.Surface) -> None:
         surface.fill(BG_DEEP)
         w, h = surface.get_size()
-        title = font("display").render("Settings", True, TEXT_BRIGHT)
-        surface.blit(title, ((w - title.get_width()) // 2, 60))
-        hint = font("ui").render("Click to toggle  |  ESC = back", True, TEXT_DIM)
-        surface.blit(hint, ((w - hint.get_width()) // 2, 108))
 
-        start_y = 160
+        title = font("display").render("Settings", True, TEXT_BRIGHT)
+        surface.blit(title, ((w - title.get_width()) // 2, 52))
+
+        hint = font("ui").render("Click a row to toggle  ·  ESC = back", True, TEXT_DIM)
+        surface.blit(hint, ((w - hint.get_width()) // 2, 100))
+
+        card_x = (w - self.CARD_W) // 2
+        start_y = 148
+
         for i, (key, label) in enumerate(self.TOGGLES):
             y = start_y + i * self.ROW_H
             val = self._settings.get(key, False)
-            color = P1_ACCENT if val else TEXT_MUTED
-            indicator = font("ui").render("●  " + label, True, color)
-            surface.blit(indicator, (w // 4, y))
-            state_str = "ON" if val else "OFF"
-            state = font("ui").render(state_str, True, color)
-            surface.blit(state, (w * 3 // 4 - state.get_width(), y))
+            rect = pygame.Rect(card_x, y, self.CARD_W, self.ROW_H - 8)
 
-        back = font("ui").render("ESC — Back", True, TEXT_DIM)
-        surface.blit(back, ((w - back.get_width()) // 2, h - 60))
+            draw_card(
+                surface, rect,
+                stripe_color=P1_ACCENT if val else None,
+                fill_alpha=50 if val else 20,
+                border_alpha=90 if val else 40,
+            )
+
+            label_col = TEXT_BRIGHT if val else TEXT_MUTED
+            ls = font("ui").render(label, True, label_col)
+            surface.blit(ls, (card_x + 18, y + (self.ROW_H - 8 - ls.get_height()) // 2))
+
+            # Pill toggle on the right side of the card
+            draw_toggle(
+                surface,
+                card_x + self.CARD_W - 36,
+                y + (self.ROW_H - 8) // 2,
+                val,
+            )
+
+        back = font("small").render("ESC — Back", True, TEXT_DIM)
+        surface.blit(back, ((w - back.get_width()) // 2, h - 52))
 
     def handle_event(self, event: pygame.event.Event, surface: pygame.Surface) -> str | None:
         w, h = surface.get_size()
-        start_y = 160
+        card_x = (w - self.CARD_W) // 2
+        start_y = 148
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             mx, my = event.pos
             for i, (key, _) in enumerate(self.TOGGLES):
                 y = start_y + i * self.ROW_H
-                if y <= my <= y + self.ROW_H and w // 4 <= mx <= w * 3 // 4:
+                rect = pygame.Rect(card_x, y, self.CARD_W, self.ROW_H - 8)
+                if rect.collidepoint(mx, my):
                     self._settings[key] = not self._settings.get(key, False)
 
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:

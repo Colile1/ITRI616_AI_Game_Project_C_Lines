@@ -8,7 +8,7 @@ import numpy as np
 from src.config import (
     MODE_FIRST_TO_FOUR, MODE_POINTS_FULL, DEFAULT_MODE,
     DEFAULT_BOARD_SIZE, WIN_REWARD, LOSS_REWARD, DRAW_REWARD,
-    STEP_REWARD_SCALE, PLAYER_1, PLAYER_2,
+    STEP_REWARD_SCALE, PLAYER_1, PLAYER_2, STATE_CHANNELS,
 )
 from src.engine.board import Board, setup_board
 from src.engine.rules import (
@@ -26,9 +26,15 @@ class GameEnv:
     current player (always ch0 = "mine"). Call reset() before each episode.
     """
 
-    def __init__(self, board_size: int = DEFAULT_BOARD_SIZE, mode: str = DEFAULT_MODE):
+    def __init__(
+        self,
+        board_size: int = DEFAULT_BOARD_SIZE,
+        mode: str = DEFAULT_MODE,
+        state_channels: int = STATE_CHANNELS,
+    ):
         self.board_size = board_size
         self.mode = mode
+        self.state_channels = state_channels
         self._board: Board = setup_board(board_size)
         self._prev_scores: tuple[float, float] = (0.0, 0.0)
 
@@ -78,7 +84,7 @@ class GameEnv:
     # ------------------------------------------------------------------
 
     def _obs(self) -> np.ndarray:
-        return state_to_tensor(self._board)
+        return state_to_tensor(self._board, n_channels=self.state_channels)
 
     def _compute_reward(
         self, done: bool, winner: int | None, acting_player: int

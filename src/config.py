@@ -150,7 +150,7 @@ MCTS_MAX_THINK_SEC = 1.5     # hard wall-clock cap per move
 # ---------------------------------------------------------------------------
 # Alpha-beta benchmark agent
 # ---------------------------------------------------------------------------
-BENCHMARK_DEPTH_BY_SIZE: dict[int, int] = {8: 4, 9: 4, 10: 3, 11: 3, 12: 3}
+BENCHMARK_DEPTH_BY_SIZE: dict[int, int] = {8: 2, 9: 2, 10: 2, 11: 2, 12: 2}
 BENCHMARK_EVAL_WEIGHTS: dict[str, float] = {
     "open_3": 1.0,
     "open_4": 5.0,
@@ -175,13 +175,13 @@ DEFAULT_SOURCE_WEIGHTS: dict[str, float] = {
 # ---------------------------------------------------------------------------
 # Benchmark logging
 # ---------------------------------------------------------------------------
-BENCHMARK_EVERY_N_GAMES_SMALL = 1   # board sizes <= 10
-BENCHMARK_EVERY_N_GAMES_LARGE = 5   # board sizes >= 11
+BENCHMARK_EVERY_N_GAMES_SMALL = 100  # board sizes <= 10
+BENCHMARK_EVERY_N_GAMES_LARGE = 200  # board sizes >= 11
 
 # ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
 CELL_PX = 56
-BOARD_MARGIN = 24
+BOARD_MARGIN = 36
 SIDEBAR_W = 320
 ANIMATION_DURATION_MS = 120
