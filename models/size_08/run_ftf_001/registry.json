@@ -37,5 +37,44 @@
     "elo_rating": null,
     "created_at": "2026-05-29T07:22:46.257896+00:00",
     "model_version": 2
+  },
+  {
+    "version_id": "gen_004",
+    "run_id": "run_ftf_001",
+    "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\run_ftf_001\\gen_004\\weights.pt",
+    "friendly_name": "Cadet",
+    "difficulty_band": "easy",
+    "games_trained": 4000,
+    "win_rate_vs_random": 0.34,
+    "win_rate_vs_heuristic": 0.0,
+    "elo_rating": null,
+    "created_at": "2026-05-29T09:22:44.167488+00:00",
+    "model_version": 2
+  },
+  {
+    "version_id": "gen_005",
+    "run_id": "run_ftf_001",
+    "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\run_ftf_001\\gen_005\\weights.pt",
+    "friendly_name": "Tactician",
+    "difficulty_band": "medium",
+    "games_trained": 5000,
+    "win_rate_vs_random": 0.46,
+    "win_rate_vs_heuristic": 0.0,
+    "elo_rating": null,
+    "created_at": "2026-05-29T10:31:50.210947+00:00",
+    "model_version": 2
+  },
+  {
+    "version_id": "gen_006",
+    "run_id": "run_ftf_001",
+    "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\run_ftf_001\\gen_006\\weights.pt",
+    "friendly_name": "Adept",
+    "difficulty_band": "medium",
+    "games_trained": 6000,
+    "win_rate_vs_random": 0.51,
+    "win_rate_vs_heuristic": 0.0,
+    "elo_rating": null,
+    "created_at": "2026-05-29T12:51:41.324218+00:00",
+    "model_version": 2
   }
 ]
