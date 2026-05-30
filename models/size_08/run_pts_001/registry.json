@@ -63,5 +63,70 @@
     "elo_rating": null,
     "created_at": "2026-05-29T15:39:37.847746+00:00",
     "model_version": 2
+  },
+  {
+    "version_id": "gen_006",
+    "run_id": "run_pts_001",
+    "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\run_pts_001\\gen_006\\weights.pt",
+    "friendly_name": "Adept",
+    "difficulty_band": "medium",
+    "games_trained": 6000,
+    "win_rate_vs_random": 0.44,
+    "win_rate_vs_heuristic": 0.92,
+    "elo_rating": null,
+    "created_at": "2026-05-29T16:51:10.549117+00:00",
+    "model_version": 2
+  },
+  {
+    "version_id": "gen_007",
+    "run_id": "run_pts_001",
+    "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\run_pts_001\\gen_007\\weights.pt",
+    "friendly_name": "Tactician",
+    "difficulty_band": "medium",
+    "games_trained": 7000,
+    "win_rate_vs_random": 0.57,
+    "win_rate_vs_heuristic": 1.0,
+    "elo_rating": null,
+    "created_at": "2026-05-29T17:49:31.927444+00:00",
+    "model_version": 2
+  },
+  {
+    "version_id": "gen_008",
+    "run_id": "run_pts_001",
+    "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\run_pts_001\\gen_008\\weights.pt",
+    "friendly_name": "Veteran",
+    "difficulty_band": "hard",
+    "games_trained": 8000,
+    "win_rate_vs_random": 0.24,
+    "win_rate_vs_heuristic": 0.66,
+    "elo_rating": null,
+    "created_at": "2026-05-29T18:35:54.141547+00:00",
+    "model_version": 2
+  },
+  {
+    "version_id": "gen_009",
+    "run_id": "run_pts_001",
+    "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\run_pts_001\\gen_009\\weights.pt",
+    "friendly_name": "Strategist",
+    "difficulty_band": "hard",
+    "games_trained": 9000,
+    "win_rate_vs_random": 0.29,
+    "win_rate_vs_heuristic": 0.42,
+    "elo_rating": null,
+    "created_at": "2026-05-29T19:47:17.373161+00:00",
+    "model_version": 2
+  },
+  {
+    "version_id": "gen_010",
+    "run_id": "run_pts_001",
+    "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\run_pts_001\\gen_010\\weights.pt",
+    "friendly_name": "Champion",
+    "difficulty_band": "master",
+    "games_trained": 10000,
+    "win_rate_vs_random": 0.15,
+    "win_rate_vs_heuristic": 0.1,
+    "elo_rating": null,
+    "created_at": "2026-05-30T01:06:16.475508+00:00",
+    "model_version": 2
   }
 ]

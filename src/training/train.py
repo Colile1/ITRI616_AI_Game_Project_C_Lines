@@ -23,7 +23,9 @@ Outputs:
 from __future__ import annotations
 import argparse
 import csv
+import time
 import uuid
+from datetime import timedelta
 from pathlib import Path
 
 import numpy as np
@@ -154,6 +156,26 @@ def _make_benchmark_agent(benchmark_name: str, board_size: int):
 # Simple auto-train (backward-compatible)
 # ---------------------------------------------------------------------------
 
+def _load_resume_state(
+    board_size: int, run_id: str, agent: DQNAgent
+) -> int:
+    """Load the latest snapshot into agent. Returns the game index to resume from."""
+    import torch
+    from src.versioning.registry import list_by_size_run
+    snaps = list_by_size_run(board_size, run_id, _cfg.MODELS_DIR)
+    if not snaps:
+        print(f"  [resume] No snapshots found for {run_id} — starting from game 0.")
+        return 0
+    latest = snaps[-1]
+    sd = torch.load(latest.weights_path, map_location="cpu", weights_only=True)
+    agent.load_state_dict(sd)
+    resume_from = latest.games_trained
+    eps = linear_epsilon(EPS_START, EPS_END, resume_from, EPS_DECAY_GAMES)
+    agent.set_epsilon(eps)
+    print(f"  [resume] Loaded {latest.version_id} ({resume_from} games trained, eps={eps:.3f})")
+    return resume_from
+
+
 def train(
     board_size: int = DEFAULT_BOARD_SIZE,
     mode: str = DEFAULT_MODE,
@@ -161,6 +183,7 @@ def train(
     run_id: str | None = None,
     benchmark_name: str | None = None,
     use_augmentation: bool = USE_SYMMETRY_AUGMENTATION,
+    resume: bool = False,
 ) -> None:
     """Auto-train with all upgrades active — the simple existing interface."""
     run_id = resolve_run_id(board_size, run_id)
@@ -206,15 +229,25 @@ def train(
     last_loss = 0.0
     current_lr = LR
 
-    log_file = log_path.open("w", newline="")
-    writer = csv.writer(log_file)
-    writer.writerow([
-        "game", "epsilon", "lr", "loss",
-        "win_rate_vs_random", "win_rate_vs_heuristic",
-        "mean_ep_len", "snapshot",
-    ])
+    # Resume: load latest snapshot weights and find start game
+    start_game = 0
+    if resume:
+        start_game = _load_resume_state(board_size, run_id, agent)
 
-    for game_idx in range(n_games):
+    train_start = time.monotonic()
+
+    # Open CSV — append if resuming so existing rows are preserved
+    csv_mode = "a" if resume and log_path.exists() else "w"
+    log_file = log_path.open(csv_mode, newline="")
+    writer = csv.writer(log_file)
+    if csv_mode == "w":
+        writer.writerow([
+            "game", "epsilon", "lr", "loss",
+            "win_rate_vs_random", "win_rate_vs_heuristic",
+            "mean_ep_len", "elapsed_sec", "games_per_hour", "snapshot",
+        ])
+
+    for game_idx in range(start_game, n_games):
         epsilon = linear_epsilon(EPS_START, EPS_END, game_idx, EPS_DECAY_GAMES)
         agent.set_epsilon(epsilon)
         current_lr = _apply_lr_schedule(agent._optimizer, game_idx, n_games, LR)
@@ -269,6 +302,9 @@ def train(
         # ---- Evaluation ----
         if game_idx % EVAL_INTERVAL == 0 or game_idx == n_games - 1:
             eval_stats = _evaluate(agent, board_size, mode, EVAL_GAMES)
+            elapsed = time.monotonic() - train_start
+            games_done = game_idx - start_game + 1
+            gph = games_done / elapsed * 3600 if elapsed > 0 else 0
             writer.writerow([
                 game_idx,
                 f"{epsilon:.4f}",
@@ -277,6 +313,8 @@ def train(
                 f"{eval_stats.get('win_rate_vs_random', 0):.4f}",
                 f"{eval_stats.get('win_rate_vs_heuristic', 0):.4f}",
                 f"{eval_stats.get('mean_ep_len', 0):.1f}",
+                f"{elapsed:.0f}",
+                f"{gph:.0f}",
                 snap_id,
             ])
             log_file.flush()
@@ -313,8 +351,14 @@ def train(
         if game_idx % 100 == 0:
             wr_r = eval_stats.get("win_rate_vs_random", 0)
             wr_h = eval_stats.get("win_rate_vs_heuristic", 0)
+            elapsed = time.monotonic() - train_start
+            games_done = game_idx - start_game + 1
+            gph = games_done / elapsed * 3600 if elapsed > 0 else 0
+            remaining = (n_games - game_idx) / (gph / 3600) if gph > 0 else 0
+            eta = str(timedelta(seconds=int(remaining)))
             print(f"  game {game_idx:5d}  eps={epsilon:.3f}  lr={current_lr:.1e}"
-                  f"  loss={last_loss:.4f}  wr_rand={wr_r:.2%}  wr_heur={wr_h:.2%}")
+                  f"  loss={last_loss:.4f}  wr_rand={wr_r:.2%}  wr_heur={wr_h:.2%}"
+                  f"  {gph:.0f} g/h  ETA {eta}")
 
     log_file.close()
     if bm_logger:
@@ -537,6 +581,8 @@ def _parse_args() -> argparse.Namespace:
                    help="Path to a JSON schedule file")
     p.add_argument("--no-augment",     action="store_true", default=False,
                    help="Disable symmetry augmentation")
+    p.add_argument("--resume",         action="store_true", default=False,
+                   help="Resume from the latest snapshot saved for --run-id")
     return p.parse_args()
 
 
@@ -564,6 +610,7 @@ def main() -> None:
             run_id=args.run_id,
             benchmark_name=args.benchmark,
             use_augmentation=use_aug,
+            resume=args.resume,
         )
 
 

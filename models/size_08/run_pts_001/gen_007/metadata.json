@@ -1,0 +1,63 @@
+{
+  "version_id": "gen_007",
+  "board_size": 8,
+  "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\run_pts_001\\gen_007\\weights.pt",
+  "run_id": "run_pts_001",
+  "created_at": "2026-05-29T17:49:31.927444+00:00",
+  "games_trained": 7000,
+  "gradient_steps": 27992,
+  "epsilon_at_freeze": 0.050000000000000044,
+  "parent_run_id": "788b6865-a362-4c8d-b753-07e0baa28582",
+  "parent_version_id": "gen_006",
+  "win_rate_vs_random": 0.57,
+  "win_rate_vs_heuristic": 1.0,
+  "win_rate_vs_self": null,
+  "elo_rating": null,
+  "mean_episode_length": 64.0,
+  "training_history": [
+    {
+      "games_trained": 1000,
+      "win_rate_vs_random": 0.66,
+      "elo_rating": null
+    },
+    {
+      "games_trained": 2000,
+      "win_rate_vs_random": 0.52,
+      "elo_rating": null
+    },
+    {
+      "games_trained": 3000,
+      "win_rate_vs_random": 0.79,
+      "elo_rating": null
+    },
+    {
+      "games_trained": 4000,
+      "win_rate_vs_random": 0.88,
+      "elo_rating": null
+    },
+    {
+      "games_trained": 5000,
+      "win_rate_vs_random": 0.78,
+      "elo_rating": null
+    },
+    {
+      "games_trained": 6000,
+      "win_rate_vs_random": 0.44,
+      "elo_rating": null
+    },
+    {
+      "games_trained": 7000,
+      "win_rate_vs_random": 0.57,
+      "elo_rating": null
+    }
+  ],
+  "friendly_name": "Tactician",
+  "difficulty_band": "medium",
+  "notes": "",
+  "model_version": 2,
+  "state_channels": 10,
+  "network_arch": "resnet_v1",
+  "parent_schedule_path": null,
+  "human_games_seen": 0,
+  "benchmark_summary": null
+}

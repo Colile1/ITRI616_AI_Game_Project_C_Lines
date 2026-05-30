@@ -94,15 +94,13 @@ class GameEnv:
                 return DRAW_REWARD
             return WIN_REWARD if winner == acting_player else LOSS_REWARD
 
-        if self.mode == MODE_POINTS_FULL:
-            # Delta-score shaping
-            p1_now, p2_now = compute_scores(self._board)
-            p1_prev, p2_prev = self._prev_scores
-            self._prev_scores = (p1_now, p2_now)
-            if acting_player == PLAYER_1:
-                return (p1_now - p1_prev - (p2_now - p2_prev)) * STEP_REWARD_SCALE
-            else:
-                return (p2_now - p2_prev - (p1_now - p1_prev)) * STEP_REWARD_SCALE
-
-        # Mode 1 mid-game: 0 reward
-        return 0.0
+        # Delta-score shaping — applied to BOTH modes.
+        # In first_to_four, the score delta (run formation) still gives the agent
+        # a meaningful gradient on every step rather than only at the terminal.
+        p1_now, p2_now = compute_scores(self._board)
+        p1_prev, p2_prev = self._prev_scores
+        self._prev_scores = (p1_now, p2_now)
+        if acting_player == PLAYER_1:
+            return (p1_now - p1_prev - (p2_now - p2_prev)) * STEP_REWARD_SCALE
+        else:
+            return (p2_now - p2_prev - (p1_now - p1_prev)) * STEP_REWARD_SCALE
