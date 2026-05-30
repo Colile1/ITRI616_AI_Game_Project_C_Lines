@@ -73,31 +73,53 @@ from src.versioning.registry import next_run_id
 # Run-folder helpers
 # ---------------------------------------------------------------------------
 
-def _next_run_id_for_results(board_size: int) -> str:
+import re as _re
+
+_MODE_PREFIX: dict[str, str] = {
+    "first_to_four": "ftf",
+    "points_full":   "pts",
+}
+
+
+def _mode_prefix(mode: str) -> str:
+    return _MODE_PREFIX.get(mode, "")
+
+
+def _next_run_id_for_results(board_size: int, prefix: str = "") -> str:
     size_dir = _cfg.RESULTS_DIR / f"size_{board_size:02d}"
+    if prefix:
+        pattern = _re.compile(rf"^run_{_re.escape(prefix)}_(\d+)$")
+        stem    = f"run_{prefix}_"
+    else:
+        pattern = _re.compile(r"^run_(\d+)$")
+        stem    = "run_"
+
     if not size_dir.exists():
-        return "run_001"
-    existing = sorted(
-        p.name for p in size_dir.iterdir()
-        if p.is_dir() and p.name.startswith("run_")
-    )
-    if not existing:
-        return "run_001"
-    try:
-        n = int(existing[-1].split("_")[1]) + 1
-    except (IndexError, ValueError):
-        n = len(existing) + 1
-    return f"run_{n:03d}"
+        return f"{stem}001"
+
+    nums = []
+    for p in size_dir.iterdir():
+        if p.is_dir():
+            m = pattern.match(p.name)
+            if m:
+                nums.append(int(m.group(1)))
+
+    n = (max(nums) + 1) if nums else 1
+    return f"{stem}{n:03d}"
 
 
-def resolve_run_id(board_size: int, requested: str | None) -> str:
+def resolve_run_id(board_size: int, requested: str | None, mode: str = "") -> str:
     if requested:
         return requested
-    r_id = _next_run_id_for_results(board_size)
-    m_id = next_run_id(board_size, _cfg.MODELS_DIR)
-    r_n = int(r_id.split("_")[1])
-    m_n = int(m_id.split("_")[1])
-    return f"run_{max(r_n, m_n):03d}"
+    prefix = _mode_prefix(mode)
+    r_id   = _next_run_id_for_results(board_size, prefix)
+    m_id   = next_run_id(board_size, _cfg.MODELS_DIR, prefix)
+
+    # Extract trailing number from either format
+    r_n = int(r_id.rsplit("_", 1)[-1])
+    m_n = int(m_id.rsplit("_", 1)[-1])
+    stem = f"run_{prefix}_" if prefix else "run_"
+    return f"{stem}{max(r_n, m_n):03d}"
 
 
 # ---------------------------------------------------------------------------
@@ -257,14 +279,16 @@ def train(
     use_augmentation: bool = USE_SYMMETRY_AUGMENTATION,
     resume: bool = False,
     start_human: bool = False,
+    human_agent_override=None,   # UIHumanAgent injected by _launch_with_ui
 ) -> None:
     """Auto-train with all improvements active.
 
-    start_human=True begins the session in human-play mode.  The user can
-    switch at any time by typing 'q' during their move or by writing to
-    {results_run}/mode.txt.
+    start_human=True begins the session in human-play mode. The user can
+    switch at any time using the UI button or by writing to {results_run}/mode.txt.
+    human_agent_override: pass a UIHumanAgent to use the PyGame UI instead of
+    the terminal agent (set automatically by _launch_with_ui).
     """
-    run_id = resolve_run_id(board_size, run_id)
+    run_id = resolve_run_id(board_size, run_id, mode)
 
     results_run = _cfg.RESULTS_DIR / f"size_{board_size:02d}" / run_id
     figs_dir    = results_run / "figures"
@@ -316,13 +340,16 @@ def train(
     best_wr_heuristic = 0.0
     min_lr = LR * 0.125   # floor: three halving steps maximum
 
-    # Human mode state
-    human_agent = None
-    is_human_mode = start_human
+    # Human mode state — use injected UI agent or fall back to terminal
+    is_human_mode = start_human or (human_agent_override is not None)
     human_games_seen = 0
-    if start_human:
+    if human_agent_override is not None:
+        human_agent = human_agent_override
+    elif start_human:
         from src.agents.terminal_human_agent import TerminalHumanAgent
         human_agent = TerminalHumanAgent(board_size, switch_signal_path=results_run / "mode.txt")
+    else:
+        human_agent = None
 
     start_game = 0
     if resume:
@@ -385,11 +412,35 @@ def train(
 
         # ---- Play episode ----
         if game_idx % 2 == 0:
-            t1, t2, _ = play_episode(agent, opponent, env)
+            t1, t2, ep_winner = play_episode(agent, opponent, env)
             learner_transitions = t1
+            human_player        = 2   # human was opponent (P2)
+            human_transitions   = t2
         else:
-            t1, t2, _ = play_episode(opponent, agent, env)
+            t1, t2, ep_winner = play_episode(opponent, agent, env)
             learner_transitions = t2
+            human_player        = 1   # human was opponent (P1)
+            human_transitions   = t1
+
+        # ---- Notify UI of game result ----
+        if is_human_mode and hasattr(opponent, "notify_game_end"):
+            human_reward = human_transitions[-1].reward  if human_transitions  else 0.0
+            agent_reward = learner_transitions[-1].reward if learner_transitions else 0.0
+            if ep_winner == human_player:
+                human_result = "WIN"
+            elif ep_winner is None:
+                human_result = "DRAW"
+            else:
+                human_result = "LOSS"
+            opponent.notify_game_end({
+                "grid":          env.board.grid.copy(),
+                "human_player":  human_player,
+                "winner_player": ep_winner,
+                "human_result":  human_result,
+                "human_reward":  human_reward,
+                "agent_reward":  agent_reward,
+                "game_idx":      game_idx,
+            })
 
         for t in learner_transitions:
             buffer.push(
@@ -435,6 +486,17 @@ def train(
             current_lr, plateau_count = _maybe_decay_lr(
                 agent._optimizer, plateau_count, current_lr, min_lr
             )
+
+            # Push live stats to UI sidebar
+            if human_agent is not None and hasattr(human_agent, "push_stats"):
+                human_agent.push_stats({
+                    "game":         game_idx,
+                    "epsilon":      epsilon,
+                    "wr_random":    eval_stats.get("win_rate_vs_random"),
+                    "wr_heuristic": wr_h,
+                    "best_wr":      best_wr_heuristic,
+                    "mode":         "human" if is_human_mode else "auto",
+                })
 
             writer.writerow([
                 game_idx,
@@ -535,6 +597,77 @@ def train(
 
 
 # ---------------------------------------------------------------------------
+# PyGame UI launcher (--human flag)
+# ---------------------------------------------------------------------------
+
+def _launch_with_ui(
+    board_size: int,
+    mode: str,
+    n_games: int,
+    run_id: str | None,
+    benchmark_name: str | None,
+    use_augmentation: bool,
+    resume: bool,
+) -> None:
+    """Run training in a background thread and the PyGame board in the main thread.
+
+    PyGame requires the main thread for rendering on all platforms. The training
+    loop runs behind it and communicates moves/stats via thread-safe queues.
+    """
+    import threading
+    from queue import Queue
+    from src.agents.ui_human_agent import UIHumanAgent
+
+    resolved_run_id = resolve_run_id(board_size, run_id, mode)
+    results_run     = _cfg.RESULTS_DIR / f"size_{board_size:02d}" / resolved_run_id
+    results_run.mkdir(parents=True, exist_ok=True)
+    switch_path = results_run / "mode.txt"
+
+    board_q = Queue(maxsize=1)
+    move_q  = Queue(maxsize=1)
+    stats_q = Queue(maxsize=4)
+
+    ui_agent = UIHumanAgent(
+        board_queue=board_q,
+        move_queue=move_q,
+        stats_queue=stats_q,
+        switch_signal_path=switch_path,
+    )
+
+    train_thread = threading.Thread(
+        target=train,
+        kwargs=dict(
+            board_size=board_size,
+            mode=mode,
+            n_games=n_games,
+            run_id=resolved_run_id,
+            benchmark_name=benchmark_name,
+            use_augmentation=use_augmentation,
+            resume=resume,
+            start_human=True,
+            human_agent_override=ui_agent,
+        ),
+        daemon=True,
+        name="TrainingLoop",
+    )
+    train_thread.start()
+
+    from src.ui.training_board import TrainingBoard
+    board_ui = TrainingBoard(
+        board_size=board_size,
+        mode=mode,
+        board_queue=board_q,
+        move_queue=move_q,
+        stats_queue=stats_q,
+        switch_signal_path=switch_path,
+        training_thread=train_thread,
+    )
+    board_ui.run()   # blocks in main thread until window closed
+
+    train_thread.join(timeout=10)
+
+
+# ---------------------------------------------------------------------------
 # Schedule-based train (U4 — human-in-the-loop sessions)
 # ---------------------------------------------------------------------------
 
@@ -546,7 +679,7 @@ def train_schedule(
     use_augmentation: bool = USE_SYMMETRY_AUGMENTATION,
 ) -> None:
     """Run a full TrainingSchedule — supports mixed opponents and human phases."""
-    run_id = resolve_run_id(board_size, run_id)
+    run_id = resolve_run_id(board_size, run_id, mode)
 
     results_run = _cfg.RESULTS_DIR / f"size_{board_size:02d}" / run_id
     figs_dir    = results_run / "figures"
@@ -754,6 +887,17 @@ def main() -> None:
             schedule.benchmark_name = args.benchmark
         train_schedule(schedule, board_size=args.size, mode=args.mode,
                        run_id=args.run_id, use_augmentation=use_aug)
+    elif args.human:
+        # Open the PyGame training board — training runs in a background thread
+        _launch_with_ui(
+            board_size=args.size,
+            mode=args.mode,
+            n_games=args.games,
+            run_id=args.run_id,
+            benchmark_name=args.benchmark,
+            use_augmentation=use_aug,
+            resume=args.resume,
+        )
     else:
         train(
             board_size=args.size,
@@ -763,7 +907,7 @@ def main() -> None:
             benchmark_name=args.benchmark,
             use_augmentation=use_aug,
             resume=args.resume,
-            start_human=args.human,
+            start_human=False,
         )
 
 

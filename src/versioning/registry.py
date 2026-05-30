@@ -3,6 +3,7 @@
 from __future__ import annotations
 import json
 import os
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -22,23 +23,33 @@ def _registry_path(board_size: int, run_id: str, models_dir: Path = MODELS_DIR) 
     return _run_dir(board_size, run_id, models_dir) / "registry.json"
 
 
-def next_run_id(board_size: int, models_dir: Path = MODELS_DIR) -> str:
-    """Return the next auto-incremented run_NNN string for a given board size."""
+def next_run_id(board_size: int, models_dir: Path = MODELS_DIR, prefix: str = "") -> str:
+    """Return the next auto-incremented run ID for a given board size and mode prefix.
+
+    prefix examples: "ftf"  →  run_ftf_003
+                     "pts"  →  run_pts_002
+                     ""     →  run_001  (legacy / generic)
+    """
     size_dir = models_dir / f"size_{board_size:02d}"
+    if prefix:
+        pattern = re.compile(rf"^run_{re.escape(prefix)}_(\d+)$")
+        stem    = f"run_{prefix}_"
+    else:
+        pattern = re.compile(r"^run_(\d+)$")
+        stem    = "run_"
+
     if not size_dir.exists():
-        return "run_001"
-    existing = sorted(
-        p.name for p in size_dir.iterdir()
-        if p.is_dir() and p.name.startswith("run_")
-    )
-    if not existing:
-        return "run_001"
-    last = existing[-1]
-    try:
-        n = int(last.split("_")[1]) + 1
-    except (IndexError, ValueError):
-        n = len(existing) + 1
-    return f"run_{n:03d}"
+        return f"{stem}001"
+
+    nums = []
+    for p in size_dir.iterdir():
+        if p.is_dir():
+            m = pattern.match(p.name)
+            if m:
+                nums.append(int(m.group(1)))
+
+    n = (max(nums) + 1) if nums else 1
+    return f"{stem}{n:03d}"
 
 
 def next_version_id(board_size: int, run_id: str, models_dir: Path = MODELS_DIR) -> str:
@@ -141,8 +152,9 @@ def list_all_runs(board_size: int, models_dir: Path = MODELS_DIR) -> dict[str, l
     result: dict[str, list[SnapshotMetadata]] = {}
     if not size_dir.exists():
         return result
+    _any_run = re.compile(r"^run_")
     for run_dir in sorted(size_dir.iterdir()):
-        if run_dir.is_dir() and run_dir.name.startswith("run_"):
+        if run_dir.is_dir() and _any_run.match(run_dir.name):
             result[run_dir.name] = list_by_size_run(board_size, run_dir.name, models_dir)
     return result
 
