@@ -1,21 +1,29 @@
-"""Training CLI — unified upgrade plan (U1-U10).
+"""Training CLI — unified upgrade plan (U1-U10) + post-run improvements.
 
 Usage:
-    # Simple auto-train (existing interface, backward compatible)
-    python -m src.training.train --games 10000 --size 8
+    # Auto self-play training
+    python -m src.training.train --games 10000 --size 8 --benchmark alphabeta_d4
 
-    # With benchmark logging against alpha-beta
-    python -m src.training.train --games 5000 --size 8 --benchmark alphabeta_d4
+    # Start with human play, switch to auto when tired
+    python -m src.training.train --games 10000 --size 8 --human
+
+    # Resume a previous run
+    python -m src.training.train --games 10000 --size 8 --run-id run_003 --resume
 
     # Schedule-based session
     python -m src.training.train --size 8 --schedule "self:50,pool:200,self:100"
 
-    # Schedule from JSON file
-    python -m src.training.train --size 8 --schedule-file schedules/colile_evening.json
+Human / auto switching (mid-run):
+    During training, create a file called  mode.txt  in the run's results folder.
+    Write one of:  auto | self | pool | heuristic | human
+    The training loop reads it at each snapshot boundary and switches opponent.
+    Delete the file to hold the current mode indefinitely.
+    Typing 'q' during a human move also writes 'auto' to mode.txt automatically.
 
 Outputs:
     results/size_NN/run_NNN/training_log.csv
     results/size_NN/run_NNN/benchmark_log.csv  (if --benchmark is active)
+    results/size_NN/run_NNN/best/weights.pt    (best model seen during run)
     results/size_NN/run_NNN/figures/
     models/size_NN/run_NNN/gen_NNN/
 """
@@ -29,6 +37,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import numpy as np
+import torch
 
 import src.config as _cfg
 from src.agents.dqn_agent import DQNAgent
@@ -38,15 +47,17 @@ from src.config import (
     DEFAULT_BOARD_SIZE, DEFAULT_MODE,
     BATCH_SIZE, REPLAY_CAPACITY,
     EPS_START, EPS_END, EPS_DECAY_GAMES,
-    TARGET_SYNC_STEPS, EVAL_INTERVAL, EVAL_GAMES,
+    TARGET_SYNC_STEPS, EVAL_INTERVAL,
+    EVAL_GAMES_VS_RANDOM, EVAL_GAMES_VS_HEURISTIC,
     SNAPSHOT_INTERVAL, MAX_POOL_SIZE, WARMUP_GAMES,
     WARMUP_HEURISTIC_PROB, SELF_PLAY_MIX_PROB,
     RECENT_POOL_BIAS, RECENT_POOL_TOP_N,
     GRADIENT_STEPS_PER_GAME, TRAINING_GAMES,
-    LR, LR_DECAY_MILESTONES, LR_DECAY_FACTOR,
+    LR, LR_DECAY_FACTOR, PLATEAU_PATIENCE,
     STATE_CHANNELS_V2, NETWORK_ARCH,
     USE_SYMMETRY_AUGMENTATION,
     BENCHMARK_EVERY_N_GAMES_SMALL, BENCHMARK_EVERY_N_GAMES_LARGE,
+    BENCHMARK_GAMES_PER_CHECK, MIN_POOL_WR,
 )
 from src.game.env import GameEnv
 from src.training.replay_buffer import ReplayBuffer
@@ -90,14 +101,14 @@ def resolve_run_id(board_size: int, requested: str | None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Evaluation helpers
+# Evaluation
 # ---------------------------------------------------------------------------
 
-def _evaluate(agent: DQNAgent, board_size: int, mode: str, n_games: int) -> dict:
+def _evaluate(agent: DQNAgent, board_size: int, mode: str) -> dict:
     from src.evaluation.evaluator import evaluate
     env = GameEnv(board_size=board_size, mode=mode)
-    stats_r = evaluate(agent, RandomAgent(), env, min(n_games, 100))
-    stats_h = evaluate(agent, HeuristicAgent(), env, min(n_games, 50))
+    stats_r = evaluate(agent, RandomAgent(),   env, EVAL_GAMES_VS_RANDOM)
+    stats_h = evaluate(agent, HeuristicAgent(), env, EVAL_GAMES_VS_HEURISTIC)
     return {
         "win_rate_vs_random":    stats_r["win_rate"],
         "win_rate_vs_heuristic": stats_h["win_rate"],
@@ -106,21 +117,39 @@ def _evaluate(agent: DQNAgent, board_size: int, mode: str, n_games: int) -> dict
 
 
 # ---------------------------------------------------------------------------
-# LR scheduling
+# Best-model checkpoint
 # ---------------------------------------------------------------------------
 
-def _apply_lr_schedule(optimizer, game_idx: int, n_games: int, base_lr: float) -> float:
-    lr = base_lr
-    for milestone in LR_DECAY_MILESTONES:
-        if game_idx >= int(milestone * n_games):
-            lr *= LR_DECAY_FACTOR
-    for pg in optimizer.param_groups:
-        pg["lr"] = lr
-    return lr
+def _save_best(agent: DQNAgent, best_dir: Path, wr_h: float, game_idx: int) -> None:
+    best_dir.mkdir(parents=True, exist_ok=True)
+    torch.save(agent.state_dict(), best_dir / "weights.pt")
+    (best_dir / "info.txt").write_text(
+        f"game={game_idx}  win_rate_vs_heuristic={wr_h:.4f}\n"
+    )
 
 
 # ---------------------------------------------------------------------------
-# Pool sampling with recency bias
+# Plateau-based LR decay
+# ---------------------------------------------------------------------------
+
+def _maybe_decay_lr(
+    optimizer,
+    plateau_count: int,
+    current_lr: float,
+    min_lr: float,
+) -> tuple[float, int]:
+    """Halve LR if no improvement for PLATEAU_PATIENCE evals. Return (new_lr, reset_count)."""
+    if plateau_count >= PLATEAU_PATIENCE and current_lr > min_lr:
+        new_lr = max(current_lr * LR_DECAY_FACTOR, min_lr)
+        for pg in optimizer.param_groups:
+            pg["lr"] = new_lr
+        print(f"  [lr_decay] plateau {plateau_count} evals → LR {current_lr:.2e} → {new_lr:.2e}")
+        return new_lr, 0
+    return current_lr, plateau_count
+
+
+# ---------------------------------------------------------------------------
+# Pool helpers
 # ---------------------------------------------------------------------------
 
 def _sample_pool_opponent(pool: list):
@@ -137,7 +166,6 @@ def _sample_pool_opponent(pool: list):
 # ---------------------------------------------------------------------------
 
 def _make_benchmark_agent(benchmark_name: str, board_size: int):
-    """Construct a fixed benchmark agent from a name string."""
     if benchmark_name.startswith("alphabeta"):
         depth = None
         if "_d" in benchmark_name:
@@ -153,14 +181,54 @@ def _make_benchmark_agent(benchmark_name: str, board_size: int):
 
 
 # ---------------------------------------------------------------------------
-# Simple auto-train (backward-compatible)
+# Mode signal file
 # ---------------------------------------------------------------------------
 
-def _load_resume_state(
-    board_size: int, run_id: str, agent: DQNAgent
-) -> int:
-    """Load the latest snapshot into agent. Returns the game index to resume from."""
-    import torch
+def _read_mode_signal(run_dir: Path) -> str | None:
+    """Read {run_dir}/mode.txt if it exists. Returns content or None."""
+    sig = run_dir / "mode.txt"
+    if sig.exists():
+        return sig.read_text().strip().lower()
+    return None
+
+
+def _make_opponent_from_signal(
+    signal: str,
+    agent: DQNAgent,
+    snapshot_pool: list,
+    board_size: int,
+    run_dir: Path,
+) -> tuple:
+    """Return (opponent_callable, source_weight, is_human) for a signal string."""
+    from src.agents.terminal_human_agent import TerminalHumanAgent
+    sig = signal.split(":")[0].strip()  # ignore optional :N suffix
+    if sig in ("auto", "self"):
+        return lambda: clone_agent(agent), _cfg.DEFAULT_SOURCE_WEIGHTS.get("self", 1.0), False
+    if sig == "pool":
+        return lambda: _sample_pool_opponent(snapshot_pool), _cfg.DEFAULT_SOURCE_WEIGHTS.get("pool", 1.0), False
+    if sig == "heuristic":
+        return lambda: HeuristicAgent(), _cfg.DEFAULT_SOURCE_WEIGHTS.get("heuristic", 1.0), False
+    if sig.startswith("alphabeta"):
+        depth = None
+        if "_d" in sig:
+            try:
+                depth = int(sig.split("_d")[1])
+            except ValueError:
+                pass
+        from src.agents.alphabeta_agent import AlphaBetaAgent
+        return lambda: AlphaBetaAgent(board_size=board_size, depth=depth), _cfg.DEFAULT_SOURCE_WEIGHTS.get("alphabeta", 2.0), False
+    if sig == "human":
+        human = TerminalHumanAgent(board_size, switch_signal_path=run_dir / "mode.txt")
+        return lambda: human, _cfg.DEFAULT_SOURCE_WEIGHTS.get("human", 5.0), True
+    # Unknown signal — default to self
+    return lambda: clone_agent(agent), 1.0, False
+
+
+# ---------------------------------------------------------------------------
+# Resume helper
+# ---------------------------------------------------------------------------
+
+def _load_resume_state(board_size: int, run_id: str, agent: DQNAgent) -> int:
     from src.versioning.registry import list_by_size_run
     snaps = list_by_size_run(board_size, run_id, _cfg.MODELS_DIR)
     if not snaps:
@@ -172,9 +240,13 @@ def _load_resume_state(
     resume_from = latest.games_trained
     eps = linear_epsilon(EPS_START, EPS_END, resume_from, EPS_DECAY_GAMES)
     agent.set_epsilon(eps)
-    print(f"  [resume] Loaded {latest.version_id} ({resume_from} games trained, eps={eps:.3f})")
+    print(f"  [resume] Loaded {latest.version_id} ({resume_from} games, eps={eps:.3f})")
     return resume_from
 
+
+# ---------------------------------------------------------------------------
+# Main auto-train loop
+# ---------------------------------------------------------------------------
 
 def train(
     board_size: int = DEFAULT_BOARD_SIZE,
@@ -184,12 +256,19 @@ def train(
     benchmark_name: str | None = None,
     use_augmentation: bool = USE_SYMMETRY_AUGMENTATION,
     resume: bool = False,
+    start_human: bool = False,
 ) -> None:
-    """Auto-train with all upgrades active — the simple existing interface."""
+    """Auto-train with all improvements active.
+
+    start_human=True begins the session in human-play mode.  The user can
+    switch at any time by typing 'q' during their move or by writing to
+    {results_run}/mode.txt.
+    """
     run_id = resolve_run_id(board_size, run_id)
 
     results_run = _cfg.RESULTS_DIR / f"size_{board_size:02d}" / run_id
     figs_dir    = results_run / "figures"
+    best_dir    = results_run / "best"
     results_run.mkdir(parents=True, exist_ok=True)
     figs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -198,13 +277,17 @@ def train(
     print(f"[train] size={board_size}  mode={mode}  games={n_games}  run={run_id}")
     print(f"        arch={NETWORK_ARCH}  channels={STATE_CHANNELS_V2}  augment={use_augmentation}")
     if benchmark_name:
-        print(f"        benchmark={benchmark_name}")
+        print(f"        benchmark={benchmark_name}  games_per_check={BENCHMARK_GAMES_PER_CHECK}")
+    if start_human:
+        print(f"        Starting in HUMAN mode. Type 'q' to switch to auto.")
+        print(f"        Or write a new mode to:  {results_run / 'mode.txt'}")
+    print(f"        mode.txt path: {results_run / 'mode.txt'}")
 
     agent  = DQNAgent(board_size, in_channels=STATE_CHANNELS_V2, network_arch=NETWORK_ARCH)
     buffer = ReplayBuffer(REPLAY_CAPACITY, use_augmentation=use_augmentation)
     env    = GameEnv(board_size=board_size, mode=mode)
 
-    # Fixed benchmark agent (constructed once, never updated)
+    # Benchmark
     bm_logger: BenchmarkLogger | None = None
     if benchmark_name:
         bm_agent = _make_benchmark_agent(benchmark_name, board_size)
@@ -216,6 +299,7 @@ def train(
             benchmark_agent=bm_agent,
             env=bm_env,
             benchmark_name=benchmark_name,
+            games_per_check=BENCHMARK_GAMES_PER_CHECK,
         )
 
     warmup_opponents = [RandomAgent(), HeuristicAgent()]
@@ -228,15 +312,23 @@ def train(
     global_step = 0
     last_loss = 0.0
     current_lr = LR
+    plateau_count = 0
+    best_wr_heuristic = 0.0
+    min_lr = LR * 0.125   # floor: three halving steps maximum
 
-    # Resume: load latest snapshot weights and find start game
+    # Human mode state
+    human_agent = None
+    is_human_mode = start_human
+    human_games_seen = 0
+    if start_human:
+        from src.agents.terminal_human_agent import TerminalHumanAgent
+        human_agent = TerminalHumanAgent(board_size, switch_signal_path=results_run / "mode.txt")
+
     start_game = 0
     if resume:
         start_game = _load_resume_state(board_size, run_id, agent)
 
     train_start = time.monotonic()
-
-    # Open CSV — append if resuming so existing rows are preserved
     csv_mode = "a" if resume and log_path.exists() else "w"
     log_file = log_path.open(csv_mode, newline="")
     writer = csv.writer(log_file)
@@ -250,10 +342,28 @@ def train(
     for game_idx in range(start_game, n_games):
         epsilon = linear_epsilon(EPS_START, EPS_END, game_idx, EPS_DECAY_GAMES)
         agent.set_epsilon(epsilon)
-        current_lr = _apply_lr_schedule(agent._optimizer, game_idx, n_games, LR)
 
-        # ---- Curriculum opponent selection ----
-        if game_idx < WARMUP_GAMES:
+        # ---- Mode signal check (at each snapshot boundary) ----
+        if game_idx > 0 and game_idx % SNAPSHOT_INTERVAL == 0:
+            signal = _read_mode_signal(results_run)
+            if signal and signal != ("human" if is_human_mode else "auto"):
+                print(f"\n  [mode_switch] Signal '{signal}' detected — switching opponent.")
+                if signal == "human":
+                    if human_agent is None:
+                        from src.agents.terminal_human_agent import TerminalHumanAgent
+                        human_agent = TerminalHumanAgent(
+                            board_size, switch_signal_path=results_run / "mode.txt"
+                        )
+                    is_human_mode = True
+                else:
+                    is_human_mode = False
+
+        # ---- Opponent selection ----
+        if is_human_mode and human_agent is not None:
+            opponent = human_agent
+            source_weight = _cfg.DEFAULT_SOURCE_WEIGHTS.get("human", 5.0)
+            human_games_seen += 1
+        elif game_idx < WARMUP_GAMES:
             if np.random.random() < WARMUP_HEURISTIC_PROB:
                 opponent = HeuristicAgent()
             else:
@@ -268,6 +378,10 @@ def train(
         else:
             opponent = clone_agent(agent)
             source_weight = _cfg.DEFAULT_SOURCE_WEIGHTS.get("self", 1.0)
+
+        # ---- Pass board to human agent before episode ----
+        if is_human_mode and hasattr(opponent, "set_board"):
+            opponent.set_board(env.board.grid.copy())
 
         # ---- Play episode ----
         if game_idx % 2 == 0:
@@ -301,17 +415,34 @@ def train(
 
         # ---- Evaluation ----
         if game_idx % EVAL_INTERVAL == 0 or game_idx == n_games - 1:
-            eval_stats = _evaluate(agent, board_size, mode, EVAL_GAMES)
+            eval_stats = _evaluate(agent, board_size, mode)
             elapsed = time.monotonic() - train_start
             games_done = game_idx - start_game + 1
             gph = games_done / elapsed * 3600 if elapsed > 0 else 0
+
+            wr_h = eval_stats.get("win_rate_vs_heuristic", 0.0)
+
+            # Best-model checkpoint
+            if wr_h > best_wr_heuristic:
+                best_wr_heuristic = wr_h
+                _save_best(agent, best_dir, wr_h, game_idx)
+                plateau_count = 0
+                print(f"  [best] New best WR vs heuristic: {wr_h:.2%} at game {game_idx}")
+            else:
+                plateau_count += 1
+
+            # Plateau-based LR decay
+            current_lr, plateau_count = _maybe_decay_lr(
+                agent._optimizer, plateau_count, current_lr, min_lr
+            )
+
             writer.writerow([
                 game_idx,
                 f"{epsilon:.4f}",
                 f"{current_lr:.2e}",
                 f"{last_loss:.6f}",
                 f"{eval_stats.get('win_rate_vs_random', 0):.4f}",
-                f"{eval_stats.get('win_rate_vs_heuristic', 0):.4f}",
+                f"{wr_h:.4f}",
                 f"{eval_stats.get('mean_ep_len', 0):.1f}",
                 f"{elapsed:.0f}",
                 f"{gph:.0f}",
@@ -334,6 +465,7 @@ def train(
                 gradient_steps=global_step,
                 history=history,
                 models_dir=_cfg.MODELS_DIR,
+                human_games_seen=human_games_seen,
             )
             parent_version_id = meta.version_id
             history.append(TrainingHistoryEntry(
@@ -341,11 +473,17 @@ def train(
                 win_rate_vs_random=meta.win_rate_vs_random,
                 elo_rating=meta.elo_rating,
             ))
-            cloned = clone_agent(agent)
-            snapshot_pool.append(cloned)
-            if len(snapshot_pool) > MAX_POOL_SIZE:
-                snapshot_pool.pop(0)
             snap_id = meta.version_id
+
+            # Pool quality gate — only add if WR vs random meets minimum
+            wr_r = eval_stats.get("win_rate_vs_random", 0.0) or 0.0
+            if wr_r >= MIN_POOL_WR:
+                cloned = clone_agent(agent)
+                snapshot_pool.append(cloned)
+                if len(snapshot_pool) > MAX_POOL_SIZE:
+                    snapshot_pool.pop(0)
+            else:
+                print(f"  [pool_gate] Snapshot skipped pool (WR_random={wr_r:.0%} < {MIN_POOL_WR:.0%})")
 
         # ---- Progress print ----
         if game_idx % 100 == 0:
@@ -356,21 +494,23 @@ def train(
             gph = games_done / elapsed * 3600 if elapsed > 0 else 0
             remaining = (n_games - game_idx) / (gph / 3600) if gph > 0 else 0
             eta = str(timedelta(seconds=int(remaining)))
+            mode_str = "HUMAN" if is_human_mode else "auto"
             print(f"  game {game_idx:5d}  eps={epsilon:.3f}  lr={current_lr:.1e}"
                   f"  loss={last_loss:.4f}  wr_rand={wr_r:.2%}  wr_heur={wr_h:.2%}"
-                  f"  {gph:.0f} g/h  ETA {eta}")
+                  f"  best={best_wr_heuristic:.2%}  [{mode_str}]  {gph:.0f} g/h  ETA {eta}")
 
     log_file.close()
     if bm_logger:
         bm_logger.close()
 
-    final_stats = _evaluate(agent, board_size, mode, EVAL_GAMES)
+    final_stats = _evaluate(agent, board_size, mode)
     freeze(
         agent, n_games, final_stats, board_size, run_id,
         parent_run_id=parent_run_uuid,
         parent_version_id=parent_version_id,
         gradient_steps=global_step, history=history,
         models_dir=_cfg.MODELS_DIR,
+        human_games_seen=human_games_seen,
     )
 
     from src.evaluation.plots import generate_all_plots, generate_benchmark_plot
@@ -389,6 +529,9 @@ def train(
     print(f"\nTraining complete — {n_games} games  size={board_size}  run={run_id}")
     print(f"Final WR vs random={final_stats['win_rate_vs_random']:.0%}"
           f"  vs heuristic={final_stats['win_rate_vs_heuristic']:.0%}")
+    if best_wr_heuristic > 0:
+        print(f"Best WR vs heuristic during run: {best_wr_heuristic:.0%}"
+              f"  (saved to {best_dir}/weights.pt)")
 
 
 # ---------------------------------------------------------------------------
@@ -407,6 +550,7 @@ def train_schedule(
 
     results_run = _cfg.RESULTS_DIR / f"size_{board_size:02d}" / run_id
     figs_dir    = results_run / "figures"
+    best_dir    = results_run / "best"
     results_run.mkdir(parents=True, exist_ok=True)
     figs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -419,7 +563,6 @@ def train_schedule(
     buffer = ReplayBuffer(REPLAY_CAPACITY, use_augmentation=use_augmentation)
     env    = GameEnv(board_size=board_size, mode=mode)
 
-    # Fixed benchmark
     bm_agent  = _make_benchmark_agent(schedule.benchmark_name, board_size)
     bm_env    = GameEnv(board_size=board_size, mode=mode)
     bm_every  = schedule.benchmark_every_n_games
@@ -428,7 +571,7 @@ def train_schedule(
         benchmark_agent=bm_agent,
         env=bm_env,
         benchmark_name=schedule.benchmark_name,
-        games_per_check=schedule.benchmark_games_per_check,
+        games_per_check=max(schedule.benchmark_games_per_check, BENCHMARK_GAMES_PER_CHECK),
     )
 
     snapshot_pool: list = []
@@ -438,6 +581,9 @@ def train_schedule(
     global_step = 0
     last_loss = 0.0
     current_lr = LR
+    plateau_count = 0
+    best_wr_heuristic = 0.0
+    min_lr = LR * 0.125
     global_game_idx = 0
     human_games_seen = 0
 
@@ -451,14 +597,11 @@ def train_schedule(
 
     for phase in schedule.phases:
         src = make_source(phase.opponent_name, pool=snapshot_pool, agent_factory=lambda: agent)
-        print(f"\n[phase] {phase.name}  opponent={phase.opponent_name}  games={phase.n_games}  weight={phase.weight}")
+        print(f"\n[phase] {phase.name}  opponent={phase.opponent_name}  games={phase.n_games}")
 
         for phase_game in range(phase.n_games):
             epsilon = linear_epsilon(EPS_START, EPS_END, global_game_idx, EPS_DECAY_GAMES)
             agent.set_epsilon(epsilon)
-            current_lr = _apply_lr_schedule(
-                agent._optimizer, global_game_idx, schedule.total_games(), LR
-            )
 
             opponent = src.next_agent()
 
@@ -480,7 +623,6 @@ def train_schedule(
             if phase.opponent_name in ("human", "demo"):
                 human_games_seen += 1
 
-            # Gradient steps
             if phase.train and len(buffer) >= BATCH_SIZE:
                 for _ in range(GRADIENT_STEPS_PER_GAME):
                     batch = buffer.sample(BATCH_SIZE)
@@ -489,25 +631,35 @@ def train_schedule(
                     if global_step % TARGET_SYNC_STEPS == 0:
                         agent.sync_target()
 
-            # Benchmark
             if global_game_idx % bm_every == 0:
                 bm_logger.run(agent, global_game_idx, phase_name=phase.name)
 
-            # Eval
             eval_stats: dict = {}
             snap_id = ""
-            if global_game_idx % EVAL_INTERVAL == 0:
-                eval_stats = _evaluate(agent, board_size, mode, EVAL_GAMES)
+            if global_game_idx % schedule.eval_every_n_games == 0:
+                eval_stats = _evaluate(agent, board_size, mode)
+                wr_h = eval_stats.get("win_rate_vs_heuristic", 0.0)
+
+                if wr_h > best_wr_heuristic:
+                    best_wr_heuristic = wr_h
+                    _save_best(agent, best_dir, wr_h, global_game_idx)
+                    plateau_count = 0
+                else:
+                    plateau_count += 1
+
+                current_lr, plateau_count = _maybe_decay_lr(
+                    agent._optimizer, plateau_count, current_lr, min_lr
+                )
+
                 writer.writerow([
                     global_game_idx, phase.name,
                     f"{epsilon:.4f}", f"{current_lr:.2e}", f"{last_loss:.6f}",
                     f"{eval_stats.get('win_rate_vs_random', 0):.4f}",
-                    f"{eval_stats.get('win_rate_vs_heuristic', 0):.4f}",
+                    f"{wr_h:.4f}",
                     f"{eval_stats.get('mean_ep_len', 0):.1f}", snap_id,
                 ])
                 log_file.flush()
 
-            # Snapshot
             if global_game_idx % schedule.snapshot_every_n_games == 0 and global_game_idx > 0:
                 meta = freeze(
                     agent, global_game_idx, eval_stats or {},
@@ -525,22 +677,21 @@ def train_schedule(
                     win_rate_vs_random=meta.win_rate_vs_random,
                     elo_rating=meta.elo_rating,
                 ))
-                cloned = clone_agent(agent)
-                snapshot_pool.append(cloned)
-                if len(snapshot_pool) > MAX_POOL_SIZE:
-                    snapshot_pool.pop(0)
                 snap_id = meta.version_id
 
-            if phase_game % 10 == 0:
-                print(f"    game {global_game_idx:5d}  eps={epsilon:.3f}"
-                      f"  loss={last_loss:.4f}")
+                wr_r = (eval_stats or {}).get("win_rate_vs_random", 0.0) or 0.0
+                if wr_r >= MIN_POOL_WR:
+                    cloned = clone_agent(agent)
+                    snapshot_pool.append(cloned)
+                    if len(snapshot_pool) > MAX_POOL_SIZE:
+                        snapshot_pool.pop(0)
 
             global_game_idx += 1
 
     log_file.close()
     bm_logger.close()
 
-    final_stats = _evaluate(agent, board_size, mode, EVAL_GAMES)
+    final_stats = _evaluate(agent, board_size, mode)
     freeze(
         agent, global_game_idx, final_stats, board_size, run_id,
         parent_run_id=parent_run_uuid,
@@ -561,6 +712,8 @@ def train_schedule(
     print(f"\nSchedule complete — {global_game_idx} total games  run={run_id}")
     print(f"Final WR vs random={final_stats['win_rate_vs_random']:.0%}"
           f"  vs heuristic={final_stats['win_rate_vs_heuristic']:.0%}")
+    if best_wr_heuristic > 0:
+        print(f"Best WR vs heuristic: {best_wr_heuristic:.0%}  (saved to {best_dir}/)")
 
 
 # ---------------------------------------------------------------------------
@@ -568,21 +721,22 @@ def train_schedule(
 # ---------------------------------------------------------------------------
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Train a DQN agent for C_lines (unified upgrade)")
+    p = argparse.ArgumentParser(description="Train a DQN agent for C_lines")
     p.add_argument("--games",          type=int, default=TRAINING_GAMES)
     p.add_argument("--size",           type=int, default=DEFAULT_BOARD_SIZE)
     p.add_argument("--mode",           type=str, default=DEFAULT_MODE)
     p.add_argument("--run-id",         type=str, default=None)
     p.add_argument("--benchmark",      type=str, default=None,
-                   help="Fixed benchmark agent name, e.g. 'alphabeta_d4' or 'heuristic'")
+                   help="Fixed benchmark agent, e.g. 'alphabeta_d4' or 'heuristic'")
     p.add_argument("--schedule",       type=str, default=None,
                    help="Inline schedule string, e.g. 'self:50,pool:200'")
     p.add_argument("--schedule-file",  type=str, default=None,
                    help="Path to a JSON schedule file")
-    p.add_argument("--no-augment",     action="store_true", default=False,
-                   help="Disable symmetry augmentation")
+    p.add_argument("--no-augment",     action="store_true", default=False)
     p.add_argument("--resume",         action="store_true", default=False,
-                   help="Resume from the latest snapshot saved for --run-id")
+                   help="Resume from the latest snapshot for --run-id")
+    p.add_argument("--human",          action="store_true", default=False,
+                   help="Start training in human-play mode (terminal input)")
     return p.parse_args()
 
 
@@ -591,7 +745,6 @@ def main() -> None:
     use_aug = not args.no_augment
 
     if args.schedule or args.schedule_file:
-        # Schedule-based run
         if args.schedule_file:
             text = Path(args.schedule_file).read_text()
             schedule = TrainingSchedule.from_json(text)
@@ -602,7 +755,6 @@ def main() -> None:
         train_schedule(schedule, board_size=args.size, mode=args.mode,
                        run_id=args.run_id, use_augmentation=use_aug)
     else:
-        # Simple auto-train
         train(
             board_size=args.size,
             mode=args.mode,
@@ -611,6 +763,7 @@ def main() -> None:
             benchmark_name=args.benchmark,
             use_augmentation=use_aug,
             resume=args.resume,
+            start_human=args.human,
         )
 
 

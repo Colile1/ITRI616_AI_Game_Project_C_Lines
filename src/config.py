@@ -74,7 +74,7 @@ GRADIENT_STEPS_PER_GAME = 4 # ↑ from 1 — exploit collected experience fully 
 
 EPS_START = 1.0
 EPS_END = 0.05
-EPS_DECAY_GAMES = 5_000
+EPS_DECAY_GAMES = 7_000     # extended from 5000 — more exploration into late training
 
 TRAINING_GAMES = 10_000
 WARMUP_GAMES = 2_000        # ↑ from 1000 — longer mixed-opponent warmup (P3)
@@ -87,11 +87,14 @@ SNAPSHOT_INTERVAL = 1000     # ↓ from 1000 — finer-grained pool diversity (P
 MAX_POOL_SIZE = 20
 
 EVAL_INTERVAL = 100         # ↓ from 500 — 10× more curve resolution (P1)
-EVAL_GAMES = 100            # ↑ from 50 — halves WR estimate noise (P7)
+EVAL_GAMES = 100            # legacy — kept for backward compat; new code uses the two below
+EVAL_GAMES_VS_RANDOM    = 200   # doubled from 100 — tighter WR estimate
+EVAL_GAMES_VS_HEURISTIC = 100   # doubled from 50 — tighter WR estimate
 
-# LR schedule milestones (fraction of TRAINING_GAMES)
-LR_DECAY_MILESTONES = [0.40, 0.75]   # halve LR at these fractions (P6)
+# LR schedule — plateau-based (replaces fixed milestones)
+LR_DECAY_MILESTONES = [0.40, 0.75]   # kept for legacy schedule path only
 LR_DECAY_FACTOR = 0.5
+PLATEAU_PATIENCE = 10       # eval intervals with no WR improvement before LR halves
 
 # ---------------------------------------------------------------------------
 # Versioning
@@ -177,6 +180,13 @@ DEFAULT_SOURCE_WEIGHTS: dict[str, float] = {
 # ---------------------------------------------------------------------------
 BENCHMARK_EVERY_N_GAMES_SMALL = 100  # board sizes <= 10
 BENCHMARK_EVERY_N_GAMES_LARGE = 200  # board sizes >= 11
+BENCHMARK_GAMES_PER_CHECK = 32       # games per check — was 1 (single game is too noisy)
+
+# Self-play pool quality gate
+MIN_POOL_WR = 0.50          # only add snapshot to pool if WR vs random >= this
+
+# First-to-four mode reward shaping
+FTF_THREAT_SCALE = 0.10     # reward scale for open-3 threat delta in ftf mode
 
 # ---------------------------------------------------------------------------
 # UI

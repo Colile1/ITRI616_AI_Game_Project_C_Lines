@@ -1,4 +1,4 @@
-TRI  616:  Mini-project  Assignment  (as  the  class  progresses,  we  will  keep  updating 
+ITRI  616:  Mini-project  Assignment  (as  the  class  progresses,  we  will  keep  updating 
 guidelines for the mini-project so the project must be built in a way that it is easy to adjust and expand if needs be) 
 Project description: In this semester-long mini-project assignment, you are expected to design 
 a well-poised learning problem for an intelligent game agent of your choice (but limited only 

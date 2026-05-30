@@ -8,14 +8,14 @@ import numpy as np
 from src.config import (
     MODE_FIRST_TO_FOUR, MODE_POINTS_FULL, DEFAULT_MODE,
     DEFAULT_BOARD_SIZE, WIN_REWARD, LOSS_REWARD, DRAW_REWARD,
-    STEP_REWARD_SCALE, PLAYER_1, PLAYER_2, STATE_CHANNELS,
+    STEP_REWARD_SCALE, FTF_THREAT_SCALE, PLAYER_1, PLAYER_2, STATE_CHANNELS,
 )
 from src.engine.board import Board, setup_board
 from src.engine.rules import (
     apply_placement, check_terminal_mode1, check_terminal_mode2,
     is_legal_placement,
 )
-from src.engine.scoring import compute_scores
+from src.engine.scoring import compute_scores, compute_threats
 from src.game.encoding import state_to_tensor, build_legal_mask, index_to_action
 
 
@@ -37,6 +37,7 @@ class GameEnv:
         self.state_channels = state_channels
         self._board: Board = setup_board(board_size)
         self._prev_scores: tuple[float, float] = (0.0, 0.0)
+        self._prev_threats: tuple[int, int] = (0, 0)
 
     # ------------------------------------------------------------------
     # Public API
@@ -45,6 +46,7 @@ class GameEnv:
     def reset(self) -> np.ndarray:
         self._board = setup_board(self.board_size)
         self._prev_scores = (0.0, 0.0)
+        self._prev_threats = (0, 0)
         return self._obs()
 
     def step(self, action_idx: int) -> tuple[np.ndarray, float, bool, dict[str, Any]]:
@@ -94,13 +96,25 @@ class GameEnv:
                 return DRAW_REWARD
             return WIN_REWARD if winner == acting_player else LOSS_REWARD
 
-        # Delta-score shaping — applied to BOTH modes.
-        # In first_to_four, the score delta (run formation) still gives the agent
-        # a meaningful gradient on every step rather than only at the terminal.
-        p1_now, p2_now = compute_scores(self._board)
-        p1_prev, p2_prev = self._prev_scores
-        self._prev_scores = (p1_now, p2_now)
-        if acting_player == PLAYER_1:
-            return (p1_now - p1_prev - (p2_now - p2_prev)) * STEP_REWARD_SCALE
+        if self.mode == MODE_FIRST_TO_FOUR:
+            # Threat-based shaping for ftf: reward building open-3s (one move
+            # away from a winning 4) and penalise allowing opponent open-3s.
+            # Delta-score shaping was wrong here because it rewards any line
+            # length, while only 4-in-a-row matters for winning.
+            p1_t_now, p2_t_now = compute_threats(self._board)
+            p1_t_prev, p2_t_prev = self._prev_threats
+            self._prev_threats = (p1_t_now, p2_t_now)
+            if acting_player == PLAYER_1:
+                return (p1_t_now - p1_t_prev - (p2_t_now - p2_t_prev)) * FTF_THREAT_SCALE
+            else:
+                return (p2_t_now - p2_t_prev - (p1_t_now - p1_t_prev)) * FTF_THREAT_SCALE
         else:
-            return (p2_now - p2_prev - (p1_now - p1_prev)) * STEP_REWARD_SCALE
+            # Delta-score shaping for points_full: every line length contributes
+            # to the final score, so optimising cumulative score is correct.
+            p1_now, p2_now = compute_scores(self._board)
+            p1_prev, p2_prev = self._prev_scores
+            self._prev_scores = (p1_now, p2_now)
+            if acting_player == PLAYER_1:
+                return (p1_now - p1_prev - (p2_now - p2_prev)) * STEP_REWARD_SCALE
+            else:
+                return (p2_now - p2_prev - (p1_now - p1_prev)) * STEP_REWARD_SCALE

@@ -11,19 +11,26 @@ import torch
 
 from src.agents.dqn_agent import DQNAgent
 from src.config import (
-    MODELS_DIR, FRIENDLY_NAMES, TRAINING_GAMES, MODEL_VERSION,
+    MODELS_DIR, FRIENDLY_NAMES, MODEL_VERSION,
     STATE_CHANNELS_V2, NETWORK_ARCH,
 )
 from src.versioning.metadata import SnapshotMetadata, TrainingHistoryEntry, save_metadata
 from src.versioning.registry import register, next_version_id
 
 
-def _difficulty_band(games_trained: int, total_games: int) -> str:
-    frac = games_trained / max(total_games, 1)
-    if frac >= 1.0:    return "master"
-    elif frac >= 0.75: return "hard"
-    elif frac >= 0.50: return "medium"
-    elif frac >= 0.25: return "easy"
+def _difficulty_band(eval_stats: dict) -> str:
+    """Assign band from measured win rates, not game-count fraction.
+
+    Primary signal: win rate vs heuristic (harder baseline = more meaningful).
+    Fallback: win rate vs random (always present).
+    """
+    wr_h = eval_stats.get("win_rate_vs_heuristic")
+    wr_r = eval_stats.get("win_rate_vs_random") or 0.0
+    wr = wr_h if (wr_h is not None) else wr_r
+    if wr >= 0.90:   return "master"
+    elif wr >= 0.75: return "hard"
+    elif wr >= 0.50: return "medium"
+    elif wr >= 0.25: return "easy"
     return "novice"
 
 
@@ -53,7 +60,7 @@ def freeze(
     weights_path = snap_dir / "weights.pt"
     torch.save(agent.state_dict(), weights_path)
 
-    band = _difficulty_band(game_idx, TRAINING_GAMES)
+    band = _difficulty_band(eval_stats)
     from src.versioning.registry import list_by_size_run
     run_snaps = list_by_size_run(board_size, run_id, models_dir)
     existing_count = max(0, len(run_snaps))
