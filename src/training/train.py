@@ -21,9 +21,10 @@ Human / auto switching (mid-run):
     Typing 'q' during a human move also writes 'auto' to mode.txt automatically.
 
 Outputs:
-    results/size_NN/run_NNN/training_log.csv
-    results/size_NN/run_NNN/benchmark_log.csv  (if --benchmark is active)
-    results/size_NN/run_NNN/best/weights.pt    (best model seen during run)
+    results/size_NN/run_NNN/training_log.csv    — eval metrics every 100 games
+    results/size_NN/run_NNN/game_log.csv        — every single game result
+    results/size_NN/run_NNN/benchmark_log.csv   — benchmark checks (if --benchmark)
+    results/size_NN/run_NNN/best/weights.pt     — best model seen during run
     results/size_NN/run_NNN/figures/
     models/size_NN/run_NNN/gen_NNN/
 """
@@ -65,6 +66,7 @@ from src.training.self_play import play_episode, linear_epsilon
 from src.training.snapshot import freeze, clone_agent
 from src.training.schedule import TrainingSchedule, make_source
 from src.training.benchmark_logger import BenchmarkLogger
+from src.training.game_logger import GameLogger
 from src.versioning.metadata import TrainingHistoryEntry
 from src.versioning.registry import next_run_id
 
@@ -181,6 +183,26 @@ def _sample_pool_opponent(pool: list):
     if np.random.random() < RECENT_POOL_BIAS:
         return pool[-np.random.randint(1, top_n + 1)]
     return pool[np.random.randint(len(pool))]
+
+
+def _opponent_label(opponent, is_human_mode: bool) -> str:
+    """Human-readable label for the opponent used in game_log.csv."""
+    if is_human_mode:
+        return "human"
+    pool_label = getattr(opponent, "_pool_label", None)
+    if pool_label:
+        return f"pool:{pool_label}"
+    cls = type(opponent).__name__
+    if cls == "DQNAgent":
+        return "self"
+    if cls == "RandomAgent":
+        return "random"
+    if cls == "HeuristicAgent":
+        return "heuristic"
+    if cls == "AlphaBetaAgent":
+        depth = getattr(opponent, "depth", "?")
+        return f"alphabeta_d{depth}"
+    return cls.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +348,8 @@ def train(
             games_per_check=BENCHMARK_GAMES_PER_CHECK,
         )
 
+    game_logger = GameLogger(results_run / "game_log.csv")
+
     warmup_opponents = [RandomAgent(), HeuristicAgent()]
     random_opp = RandomAgent()
 
@@ -442,6 +466,13 @@ def train(
                 "game_idx":      game_idx,
             })
 
+        # ---- Log every game result ----
+        opp_label = _opponent_label(opponent, is_human_mode)
+        if game_idx % 2 == 0:          # agent=P1, opponent=P2
+            game_logger.log(game_idx, "dqn", opp_label, ep_winner, t1, t2)
+        else:                           # opponent=P1, agent=P2
+            game_logger.log(game_idx, opp_label, "dqn", ep_winner, t1, t2)
+
         for t in learner_transitions:
             buffer.push(
                 t.state, t.action, t.reward,
@@ -541,6 +572,7 @@ def train(
             wr_r = eval_stats.get("win_rate_vs_random", 0.0) or 0.0
             if wr_r >= MIN_POOL_WR:
                 cloned = clone_agent(agent)
+                cloned._pool_label = meta.version_id   # traceable in game_log
                 snapshot_pool.append(cloned)
                 if len(snapshot_pool) > MAX_POOL_SIZE:
                     snapshot_pool.pop(0)
@@ -562,6 +594,7 @@ def train(
                   f"  best={best_wr_heuristic:.2%}  [{mode_str}]  {gph:.0f} g/h  ETA {eta}")
 
     log_file.close()
+    game_logger.close()
     if bm_logger:
         bm_logger.close()
 
