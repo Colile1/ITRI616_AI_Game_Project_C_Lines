@@ -8,7 +8,9 @@ import numpy as np
 from src.config import (
     MODE_FIRST_TO_FOUR, MODE_POINTS_FULL, DEFAULT_MODE,
     DEFAULT_BOARD_SIZE, WIN_REWARD, LOSS_REWARD, DRAW_REWARD,
-    STEP_REWARD_SCALE, FTF_THREAT_SCALE, PLAYER_1, PLAYER_2, STATE_CHANNELS,
+    STEP_REWARD_SCALE, FTF_THREAT_SCALE, FTF_SURVIVAL_SCALE,
+    FTF_EARLY_LOSS_TURNS, FTF_EARLY_LOSS_EXTRA,
+    PLAYER_1, PLAYER_2, STATE_CHANNELS,
 )
 from src.engine.board import Board, setup_board
 from src.engine.rules import (
@@ -91,26 +93,49 @@ class GameEnv:
     def _compute_reward(
         self, done: bool, winner: int | None, acting_player: int
     ) -> float:
-        if done:
-            if winner is None:
-                return DRAW_REWARD
-            return WIN_REWARD if winner == acting_player else LOSS_REWARD
-
         if self.mode == MODE_FIRST_TO_FOUR:
-            # Threat-based shaping for ftf: reward building open-3s (one move
-            # away from a winning 4) and penalise allowing opponent open-3s.
-            # Delta-score shaping was wrong here because it rewards any line
-            # length, while only 4-in-a-row matters for winning.
+            # ----------------------------------------------------------------
+            # First-to-four reward schedule
+            # ----------------------------------------------------------------
+            # Terminal (graduated by timing):
+            #   WIN  at any turn           →  +1.00   always the largest reward
+            #   LOSS after turn threshold  →  -1.00   normal loss
+            #   LOSS at turn ≤ threshold   →  -1.50   heavy penalty for early collapse
+            #   DRAW                       →   0.00
+            #
+            # Non-terminal (per step):
+            #   open-3 threat delta × FTF_THREAT_SCALE   align incentive with mode objective
+            #   + FTF_SURVIVAL_SCALE                      reward for lasting longer
+            # ----------------------------------------------------------------
+            if done:
+                if winner is None:
+                    return DRAW_REWARD
+                if winner == acting_player:
+                    return WIN_REWARD
+                if self._board.turn <= FTF_EARLY_LOSS_TURNS:
+                    return LOSS_REWARD - FTF_EARLY_LOSS_EXTRA
+                return LOSS_REWARD
+
             p1_t_now, p2_t_now = compute_threats(self._board)
             p1_t_prev, p2_t_prev = self._prev_threats
             self._prev_threats = (p1_t_now, p2_t_now)
             if acting_player == PLAYER_1:
-                return (p1_t_now - p1_t_prev - (p2_t_now - p2_t_prev)) * FTF_THREAT_SCALE
+                threat_delta = (p1_t_now - p1_t_prev - (p2_t_now - p2_t_prev)) * FTF_THREAT_SCALE
             else:
-                return (p2_t_now - p2_t_prev - (p1_t_now - p1_t_prev)) * FTF_THREAT_SCALE
+                threat_delta = (p2_t_now - p2_t_prev - (p1_t_now - p1_t_prev)) * FTF_THREAT_SCALE
+            return threat_delta + FTF_SURVIVAL_SCALE
+
         else:
-            # Delta-score shaping for points_full: every line length contributes
-            # to the final score, so optimising cumulative score is correct.
+            # ----------------------------------------------------------------
+            # Points-full reward schedule
+            # ----------------------------------------------------------------
+            if done:
+                if winner is None:
+                    return DRAW_REWARD
+                return WIN_REWARD if winner == acting_player else LOSS_REWARD
+
+            # Delta-score shaping: every line length contributes to the final
+            # score so maximising cumulative score is the correct objective.
             p1_now, p2_now = compute_scores(self._board)
             p1_prev, p2_prev = self._prev_scores
             self._prev_scores = (p1_now, p2_now)

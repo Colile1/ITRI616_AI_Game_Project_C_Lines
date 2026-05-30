@@ -186,7 +186,10 @@ BENCHMARK_GAMES_PER_CHECK = 32       # games per check — was 1 (single game is
 MIN_POOL_WR = 0.50          # only add snapshot to pool if WR vs random >= this
 
 # First-to-four mode reward shaping
-FTF_THREAT_SCALE = 0.10     # reward scale for open-3 threat delta in ftf mode
+FTF_THREAT_SCALE      = 0.10   # reward scale for open-3 threat delta in ftf mode
+FTF_SURVIVAL_SCALE    = 0.01   # small reward per non-terminal step (incentivises lasting longer)
+FTF_EARLY_LOSS_TURNS  = 8      # total moves at or below which a loss is "early"
+FTF_EARLY_LOSS_EXTRA  = 0.5    # extra penalty added on top of LOSS_REWARD for early losses
 
 # ---------------------------------------------------------------------------
 # UI

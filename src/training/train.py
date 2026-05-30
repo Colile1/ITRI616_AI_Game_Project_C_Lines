@@ -46,6 +46,7 @@ from src.agents.random_agent import RandomAgent
 from src.agents.heuristic_agent import HeuristicAgent
 from src.config import (
     DEFAULT_BOARD_SIZE, DEFAULT_MODE,
+    MODE_FIRST_TO_FOUR,
     BATCH_SIZE, REPLAY_CAPACITY,
     EPS_START, EPS_END, EPS_DECAY_GAMES,
     TARGET_SYNC_STEPS, EVAL_INTERVAL,
@@ -55,6 +56,7 @@ from src.config import (
     RECENT_POOL_BIAS, RECENT_POOL_TOP_N,
     GRADIENT_STEPS_PER_GAME, TRAINING_GAMES,
     LR, LR_DECAY_FACTOR, PLATEAU_PATIENCE,
+    LOSS_REWARD, FTF_EARLY_LOSS_TURNS, FTF_EARLY_LOSS_EXTRA,
     STATE_CHANNELS_V2, NETWORK_ARCH,
     USE_SYMMETRY_AUGMENTATION,
     BENCHMARK_EVERY_N_GAMES_SMALL, BENCHMARK_EVERY_N_GAMES_LARGE,
@@ -438,11 +440,13 @@ def train(
         if game_idx % 2 == 0:
             t1, t2, ep_winner = play_episode(agent, opponent, env)
             learner_transitions = t1
+            agent_player        = 1   # DQN was P1
             human_player        = 2   # human was opponent (P2)
             human_transitions   = t2
         else:
             t1, t2, ep_winner = play_episode(opponent, agent, env)
             learner_transitions = t2
+            agent_player        = 2   # DQN was P2
             human_player        = 1   # human was opponent (P1)
             human_transitions   = t1
 
@@ -472,6 +476,35 @@ def train(
             game_logger.log(game_idx, "dqn", opp_label, ep_winner, t1, t2)
         else:                           # opponent=P1, agent=P2
             game_logger.log(game_idx, opp_label, "dqn", ep_winner, t1, t2)
+
+        # ---- FTF synthetic loss transition ----------------------------------------
+        # In first_to_four mode the LOSER never makes the final move, so they never
+        # receive a done=True terminal reward from the environment.  Without it the
+        # early-loss penalty and the normal -1 signal are both invisible to the DQN.
+        # Fix: after every episode where the DQN lost, push one synthetic transition
+        # that carries the graduated loss reward so the Q-function can learn to avoid
+        # those states.
+        if (mode == MODE_FIRST_TO_FOUR
+                and ep_winner is not None
+                and ep_winner != agent_player
+                and learner_transitions):
+            ep_len     = len(t1) + len(t2)
+            loss_rew   = (LOSS_REWARD - FTF_EARLY_LOSS_EXTRA
+                          if ep_len <= FTF_EARLY_LOSS_TURNS
+                          else LOSS_REWARD)
+            last_t     = learner_transitions[-1]
+            # State AFTER the DQN's last move — this is the position from which the
+            # opponent then went on to complete their 4-in-a-row.
+            buffer.push(
+                last_t.next_state,
+                last_t.action,
+                loss_rew,
+                last_t.next_state,   # terminal — target value = reward only
+                True,                # done=True
+                np.zeros(board_size ** 2, dtype=bool),
+                weight=source_weight,
+            )
+        # -----------------------------------------------------------------------
 
         for t in learner_transitions:
             buffer.push(
