@@ -1,0 +1,2 @@
+game_idx,p1_label,p2_label,winner,p1_reward_sum,p2_reward_sum,episode_length,timestamp
+0,dqn,human,2,0.0400,1.1300,8,2026-05-30T20:54:21
