@@ -86,6 +86,8 @@ class TrainingBoard:
 
         # Running score tally for this training session
         self._tally: dict[str, int] = {"WIN": 0, "LOSS": 0, "DRAW": 0}
+        # Last auto-play game info (for display when in auto mode)
+        self._auto_last_game: dict | None = None
 
         # Stats sidebar data
         self._stats: dict = {}
@@ -137,13 +139,21 @@ class TrainingBoard:
                     self._game_over_info   = state
                     self._grid             = state["grid"]
                     self._waiting_for_move = False
-                    self._learning_frames  = FPS * 6   # show "AI learning" for ~6 s
+                    self._learning_frames  = FPS * 6
                     self._fake_board.grid[:] = self._grid
                     if "tally" in state:
                         self._tally = state["tally"]
+                elif state.get("display_only"):
+                    # Auto-play update — show board, no move expected
+                    self._game_over_info   = None
+                    self._grid             = state["grid"]
+                    self._waiting_for_move = False
+                    self._fake_board.grid[:] = self._grid
+                    self._auto_last_game   = state
                 else:
                     # New human turn starting — dismiss any previous result
                     self._game_over_info   = None
+                    self._auto_last_game   = None
                     self._learning_frames  = 0
                     self._grid             = state["grid"]
                     self._legal_mask       = state["legal_mask"]
@@ -308,7 +318,17 @@ class TrainingBoard:
         # Turn indicator
         if self._auto_mode:
             lbl("AUTO MODE", "h2", TEXT_MUTED)
-            lbl("AI is training itself", "small", TEXT_DIM)
+            if self._auto_last_game:
+                g  = self._auto_last_game
+                w  = g.get("winner")
+                p1 = g.get("p1_label", "?")
+                p2 = g.get("p2_label", "?")
+                gn = g.get("game_idx", "?")
+                w_str = f"P{w} wins" if w else "Draw"
+                lbl(f"Game #{gn}: {p1} vs {p2}", "small", TEXT_DIM)
+                lbl(w_str, "small", TEXT_MUTED)
+            else:
+                lbl("Watching self-play...", "small", TEXT_DIM)
         elif self._game_over_info is not None:
             result = self._game_over_info.get("human_result", "DRAW")
             if result == "WIN":
@@ -338,11 +358,13 @@ class TrainingBoard:
         wr_r    = self._stats.get("wr_random", None)
         wr_h    = self._stats.get("wr_heuristic", None)
         best_wr = self._stats.get("best_wr", None)
+        elo     = self._stats.get("elo", None)
 
         lbl(f"Game:      {game_n}", "mono", TEXT_MUTED)
         lbl(f"Epsilon:   {eps if isinstance(eps, str) else f'{eps:.3f}'}", "mono", TEXT_MUTED)
         lbl(f"WR random: {wr_r if wr_r is None else f'{wr_r:.0%}'}", "mono", TEXT_MUTED)
         lbl(f"WR heur:   {wr_h if wr_h is None else f'{wr_h:.0%}'}", "mono", TEXT_MUTED)
+        lbl(f"Elo:       {elo if elo is None else f'{elo:.0f}'}", "mono", TEXT_BRIGHT)
         lbl(f"Best WR:   {best_wr if best_wr is None else f'{best_wr:.0%}'}", "mono", TEXT_BRIGHT)
         sep()
 

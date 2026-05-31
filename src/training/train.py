@@ -69,6 +69,7 @@ from src.training.snapshot import freeze, clone_agent
 from src.training.schedule import TrainingSchedule, make_source
 from src.training.benchmark_logger import BenchmarkLogger
 from src.training.game_logger import GameLogger
+from src.evaluation.elo import update_elo, expected_score
 from src.versioning.metadata import TrainingHistoryEntry
 from src.versioning.registry import next_run_id
 
@@ -129,6 +130,36 @@ def resolve_run_id(board_size: int, requested: str | None, mode: str = "") -> st
 # ---------------------------------------------------------------------------
 # Evaluation
 # ---------------------------------------------------------------------------
+
+_ELO_ANCHORS = {
+    "random":    600.0,
+    "heuristic": 900.0,
+    "alphabeta": 1200.0,
+}
+
+
+def _elo_update(
+    agent_elo: float,
+    agent: DQNAgent,
+    board_size: int,
+    mode: str,
+    n_games: int = 20,
+) -> float:
+    """Play n_games against each anchor and return the updated agent Elo."""
+    from src.evaluation.evaluator import evaluate
+    env = GameEnv(board_size=board_size, mode=mode)
+    anchors = [
+        (RandomAgent(),    _ELO_ANCHORS["random"]),
+        (HeuristicAgent(), _ELO_ANCHORS["heuristic"]),
+    ]
+    elo = agent_elo
+    for opp, opp_elo in anchors:
+        stats = evaluate(agent, opp, env, n_games)
+        wr    = stats["win_rate"]
+        score = wr  # 1=win, 0.5=draw, 0=loss averaged over n_games
+        elo, _ = update_elo(elo, opp_elo, score, k=16.0)
+    return round(elo, 1)
+
 
 def _evaluate(agent: DQNAgent, board_size: int, mode: str) -> dict:
     from src.evaluation.evaluator import evaluate
@@ -365,6 +396,7 @@ def train(
     plateau_count = 0
     best_wr_heuristic = 0.0
     min_lr = LR * 0.125   # floor: three halving steps maximum
+    agent_elo = 800.0     # starting Elo estimate for a fresh agent
 
     # Human mode state — use injected UI agent or fall back to terminal
     is_human_mode = start_human or (human_agent_override is not None)
@@ -389,29 +421,39 @@ def train(
         writer.writerow([
             "game", "epsilon", "lr", "loss",
             "win_rate_vs_random", "win_rate_vs_heuristic",
-            "mean_ep_len", "elapsed_sec", "games_per_hour", "snapshot",
+            "elo_rating", "mean_ep_len", "elapsed_sec", "games_per_hour", "snapshot",
         ])
 
     for game_idx in range(start_game, n_games):
         epsilon = linear_epsilon(EPS_START, EPS_END, game_idx, EPS_DECAY_GAMES)
         agent.set_epsilon(epsilon)
 
-        # ---- Mode signal check (at each snapshot boundary) ----
-        if game_idx > 0 and game_idx % SNAPSHOT_INTERVAL == 0:
+        # ---- Mode signal check (every 10 games for fast response) ----
+        if game_idx % 10 == 0:
             signal = _read_mode_signal(results_run)
-            if signal and signal != ("human" if is_human_mode else "auto"):
-                print(f"\n  [mode_switch] Signal '{signal}' detected — switching opponent.")
-                if signal == "human":
-                    if human_agent is None:
-                        from src.agents.terminal_human_agent import TerminalHumanAgent
-                        human_agent = TerminalHumanAgent(
-                            board_size, switch_signal_path=results_run / "mode.txt"
-                        )
-                    is_human_mode = True
-                else:
-                    is_human_mode = False
+            if signal and signal not in ("quit",):
+                want_human = (signal == "human")
+                if want_human != is_human_mode:
+                    print(f"\n  [mode_switch] '{signal}' — switching to {'HUMAN' if want_human else 'AUTO'} mode.")
+                    if want_human:
+                        if human_agent is None:
+                            from src.agents.terminal_human_agent import TerminalHumanAgent
+                            human_agent = TerminalHumanAgent(
+                                board_size, switch_signal_path=results_run / "mode.txt"
+                            )
+                        is_human_mode = True
+                    else:
+                        is_human_mode = False
+            elif signal == "quit":
+                print("\n  [mode_switch] Quit signal — finishing training early.")
+                break
 
         # ---- Opponent selection ----
+        # Post-warmup: 10% of games always go to a permanent anchor opponent
+        # (random or heuristic) so the curriculum never collapses entirely into
+        # weak-clone-vs-weak-clone self-play (P1.4 from improvement plan).
+        _ANCHOR_PROB = 0.10
+
         if is_human_mode and human_agent is not None:
             opponent = human_agent
             source_weight = _cfg.DEFAULT_SOURCE_WEIGHTS.get("human", 5.0)
@@ -421,6 +463,10 @@ def train(
                 opponent = HeuristicAgent()
             else:
                 opponent = random_opp
+            source_weight = _cfg.DEFAULT_SOURCE_WEIGHTS.get("heuristic", 1.0)
+        elif np.random.random() < _ANCHOR_PROB:
+            # Permanent anchor: keeps the agent calibrated against known baselines
+            opponent = HeuristicAgent() if np.random.random() < 0.5 else random_opp
             source_weight = _cfg.DEFAULT_SOURCE_WEIGHTS.get("heuristic", 1.0)
         elif not snapshot_pool:
             opponent = random_opp
@@ -452,21 +498,26 @@ def train(
 
         # ---- Notify UI of game result ----
         if is_human_mode and hasattr(opponent, "notify_game_end"):
-            human_reward = human_transitions[-1].reward  if human_transitions  else 0.0
-            agent_reward = learner_transitions[-1].reward if learner_transitions else 0.0
+            ep_len = len(t1) + len(t2)
             if ep_winner == human_player:
-                human_result = "WIN"
+                human_result   = "WIN"
+                human_terminal = _cfg.WIN_REWARD
+                agent_terminal = _cfg.LOSS_REWARD - (FTF_EARLY_LOSS_EXTRA if (mode == MODE_FIRST_TO_FOUR and ep_len <= FTF_EARLY_LOSS_TURNS) else 0.0)
             elif ep_winner is None:
-                human_result = "DRAW"
+                human_result   = "DRAW"
+                human_terminal = _cfg.DRAW_REWARD
+                agent_terminal = _cfg.DRAW_REWARD
             else:
-                human_result = "LOSS"
+                human_result   = "LOSS"
+                human_terminal = _cfg.LOSS_REWARD - (FTF_EARLY_LOSS_EXTRA if (mode == MODE_FIRST_TO_FOUR and ep_len <= FTF_EARLY_LOSS_TURNS) else 0.0)
+                agent_terminal = _cfg.WIN_REWARD
             opponent.notify_game_end({
                 "grid":          env.board.grid.copy(),
                 "human_player":  human_player,
                 "winner_player": ep_winner,
                 "human_result":  human_result,
-                "human_reward":  human_reward,
-                "agent_reward":  agent_reward,
+                "human_reward":  human_terminal,
+                "agent_reward":  agent_terminal,
                 "game_idx":      game_idx,
             })
 
@@ -476,6 +527,16 @@ def train(
             game_logger.log(game_idx, "dqn", opp_label, ep_winner, t1, t2)
         else:                           # opponent=P1, agent=P2
             game_logger.log(game_idx, opp_label, "dqn", ep_winner, t1, t2)
+
+        # ---- Auto-play display update ----
+        if not is_human_mode and human_agent is not None and hasattr(human_agent, "push_display"):
+            human_agent.push_display(
+                grid      = env.board.grid.copy(),
+                winner    = ep_winner,
+                p1_label  = "dqn" if agent_player == 1 else opp_label,
+                p2_label  = opp_label if agent_player == 1 else "dqn",
+                game_idx  = game_idx,
+            )
 
         # ---- FTF synthetic loss transition ----------------------------------------
         # In first_to_four mode the LOSER never makes the final move, so they never
@@ -551,6 +612,9 @@ def train(
                 agent._optimizer, plateau_count, current_lr, min_lr
             )
 
+            # Update Elo (lightweight: 20 games vs random + heuristic)
+            agent_elo = _elo_update(agent_elo, agent, board_size, mode, n_games=20)
+
             # Push live stats to UI sidebar
             if human_agent is not None and hasattr(human_agent, "push_stats"):
                 human_agent.push_stats({
@@ -559,6 +623,7 @@ def train(
                     "wr_random":    eval_stats.get("win_rate_vs_random"),
                     "wr_heuristic": wr_h,
                     "best_wr":      best_wr_heuristic,
+                    "elo":          agent_elo,
                     "mode":         "human" if is_human_mode else "auto",
                 })
 
@@ -569,6 +634,7 @@ def train(
                 f"{last_loss:.6f}",
                 f"{eval_stats.get('win_rate_vs_random', 0):.4f}",
                 f"{wr_h:.4f}",
+                f"{agent_elo:.1f}",
                 f"{eval_stats.get('mean_ep_len', 0):.1f}",
                 f"{elapsed:.0f}",
                 f"{gph:.0f}",
@@ -584,6 +650,7 @@ def train(
                     "win_rate_vs_random":    eval_stats.get("win_rate_vs_random"),
                     "win_rate_vs_heuristic": eval_stats.get("win_rate_vs_heuristic"),
                     "mean_episode_length":   eval_stats.get("mean_ep_len"),
+                    "elo_rating":            agent_elo,
                 },
                 board_size, run_id,
                 parent_run_id=parent_run_uuid,

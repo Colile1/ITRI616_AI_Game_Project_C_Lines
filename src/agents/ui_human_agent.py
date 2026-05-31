@@ -94,6 +94,25 @@ class UIHumanAgent(BaseAgent):
         except Exception:
             pass
 
+    def push_display(self, grid, winner, p1_label: str, p2_label: str, game_idx: int) -> None:
+        """Send a display-only board update during auto-play (no move expected from UI)."""
+        msg = {
+            "display_only": True,
+            "grid":      grid,
+            "winner":    winner,
+            "p1_label":  p1_label,
+            "p2_label":  p2_label,
+            "game_idx":  game_idx,
+        }
+        try:
+            self._board_q.get_nowait()
+        except Empty:
+            pass
+        try:
+            self._board_q.put_nowait(msg)
+        except Exception:
+            pass
+
     def push_stats(self, stats: dict) -> None:
         """Called by train.py after each eval to update the sidebar."""
         if self._stats_q is not None:

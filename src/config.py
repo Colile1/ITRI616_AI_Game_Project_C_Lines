@@ -187,9 +187,9 @@ MIN_POOL_WR = 0.50          # only add snapshot to pool if WR vs random >= this
 
 # First-to-four mode reward shaping
 FTF_THREAT_SCALE      = 0.10   # reward scale for open-3 threat delta in ftf mode
-FTF_SURVIVAL_SCALE    = 0.01   # small reward per non-terminal step (incentivises lasting longer)
+FTF_SURVIVAL_SCALE    = 0.0    # intentionally zero: survival bonus rewards stalling (wrong objective)
 FTF_EARLY_LOSS_TURNS  = 8      # total moves at or below which a loss is "early"
-FTF_EARLY_LOSS_EXTRA  = 0.5    # extra penalty added on top of LOSS_REWARD for early losses
+FTF_EARLY_LOSS_EXTRA  = 0.5    # extra penalty on top of LOSS_REWARD for early collapse
 
 # ---------------------------------------------------------------------------
 # UI

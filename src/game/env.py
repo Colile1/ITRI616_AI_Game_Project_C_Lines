@@ -8,7 +8,7 @@ import numpy as np
 from src.config import (
     MODE_FIRST_TO_FOUR, MODE_POINTS_FULL, DEFAULT_MODE,
     DEFAULT_BOARD_SIZE, WIN_REWARD, LOSS_REWARD, DRAW_REWARD,
-    STEP_REWARD_SCALE, FTF_THREAT_SCALE, FTF_SURVIVAL_SCALE,
+    STEP_REWARD_SCALE, FTF_THREAT_SCALE,
     FTF_EARLY_LOSS_TURNS, FTF_EARLY_LOSS_EXTRA,
     PLAYER_1, PLAYER_2, STATE_CHANNELS,
 )
@@ -123,7 +123,7 @@ class GameEnv:
                 threat_delta = (p1_t_now - p1_t_prev - (p2_t_now - p2_t_prev)) * FTF_THREAT_SCALE
             else:
                 threat_delta = (p2_t_now - p2_t_prev - (p1_t_now - p1_t_prev)) * FTF_THREAT_SCALE
-            return threat_delta + FTF_SURVIVAL_SCALE
+            return threat_delta
 
         else:
             # ----------------------------------------------------------------

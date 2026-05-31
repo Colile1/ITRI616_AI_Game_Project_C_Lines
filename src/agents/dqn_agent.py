@@ -75,15 +75,24 @@ class DQNAgent(BaseAgent):
         legal_next  = torch.from_numpy(batch["legal_masks_next"]).to(self._device)
 
         with torch.no_grad():
-            q_next = self._target(next_states)
-            q_next[~legal_next] = _NEG_INF
-            max_q_next = q_next.max(dim=1).values
-            targets = rewards + GAMMA * max_q_next * (1.0 - dones)
+            # Double DQN: online net selects the action, target net evaluates it.
+            # Negamax sign: next_state is encoded from the OPPONENT's perspective,
+            # so max_a Q(s',a) is the opponent's value.  In a zero-sum game that
+            # value must be SUBTRACTED, not added, to get the correct TD target.
+            q_next_online = self._online(next_states)
+            q_next_online[~legal_next] = _NEG_INF
+            next_actions = q_next_online.argmax(dim=1, keepdim=True)
+
+            q_next_target = self._target(next_states)
+            next_q = q_next_target.gather(1, next_actions).squeeze(1)
+
+            targets = rewards - GAMMA * next_q * (1.0 - dones)
 
         q_pred = self._online(states)
         q_pred_actions = q_pred.gather(1, actions.unsqueeze(1)).squeeze(1)
 
-        loss = nn.functional.mse_loss(q_pred_actions, targets)
+        # Huber loss: less sensitive to large TD errors than plain MSE
+        loss = nn.functional.smooth_l1_loss(q_pred_actions, targets)
         self._optimizer.zero_grad()
         loss.backward()
         nn.utils.clip_grad_norm_(self._online.parameters(), GRADIENT_CLIP)
