@@ -80,11 +80,11 @@ TRAINING_GAMES = 10_000
 WARMUP_GAMES = 2_000        # ↑ from 1000 — longer mixed-opponent warmup (P3)
 WARMUP_HEURISTIC_PROB = 0.3 # fraction of warmup games using HeuristicAgent (P3)
 SELF_PLAY_MIX_PROB = 0.5
-RECENT_POOL_BIAS = 0.7      # prob of sampling from top-5 recent snapshots (P4)
+RECENT_POOL_BIAS = 0.5      # ↓ from 0.7 — reduce recency bias for more diversity (F4)
 RECENT_POOL_TOP_N = 5       # how many "recent" snapshots count as strong (P4)
 
 SNAPSHOT_INTERVAL = 1000     # ↓ from 1000 — finer-grained pool diversity (P8)
-MAX_POOL_SIZE = 20
+MAX_POOL_SIZE = 30           # ↑ from 20 — more pool diversity (F4)
 
 EVAL_INTERVAL = 100         # ↓ from 500 — 10× more curve resolution (P1)
 EVAL_GAMES = 100            # legacy — kept for backward compat; new code uses the two below
@@ -180,16 +180,20 @@ DEFAULT_SOURCE_WEIGHTS: dict[str, float] = {
 # ---------------------------------------------------------------------------
 BENCHMARK_EVERY_N_GAMES_SMALL = 100  # board sizes <= 10
 BENCHMARK_EVERY_N_GAMES_LARGE = 200  # board sizes >= 11
-BENCHMARK_GAMES_PER_CHECK = 32       # games per check — was 1 (single game is too noisy)
+BENCHMARK_GAMES_PER_CHECK = 64       # ↑ from 32 — halves sampling noise (R2)
 
 # Self-play pool quality gate
 MIN_POOL_WR = 0.50          # only add snapshot to pool if WR vs random >= this
 
 # First-to-four mode reward shaping
 FTF_THREAT_SCALE      = 0.10   # reward scale for open-3 threat delta in ftf mode
+FTF_THREAT_SCALE_4    = 0.30   # reward scale for double-open-3 ("forced-win") threats (F2)
 FTF_SURVIVAL_SCALE    = 0.0    # intentionally zero: survival bonus rewards stalling (wrong objective)
-FTF_EARLY_LOSS_TURNS  = 8      # total moves at or below which a loss is "early"
+FTF_EARLY_LOSS_TURNS  = 8      # total moves at or below which a loss is "early" (adaptive in train.py, F6)
 FTF_EARLY_LOSS_EXTRA  = 0.5    # extra penalty on top of LOSS_REWARD for early collapse
+
+# N-step returns
+N_STEP_RETURNS = 3             # n-step lookahead for TD target (1 = classic 1-step, F5/R3)
 
 # ---------------------------------------------------------------------------
 # UI

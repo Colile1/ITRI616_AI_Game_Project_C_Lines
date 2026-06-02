@@ -10,14 +10,34 @@ import matplotlib.pyplot as plt
 
 
 def _rolling(values: np.ndarray, window: int = 10) -> np.ndarray:
-    if len(values) < window:
-        window = max(1, len(values))
-    kernel = np.ones(window) / window
-    return np.convolve(values, kernel, mode="same")
+    """Centered rolling mean using only real data — no zero-padding at edges.
+
+    Near the start/end the effective window shrinks to the available data,
+    preventing the artificial dips that np.convolve(mode='same') causes.
+    """
+    n = len(values)
+    if n == 0:
+        return values.copy().astype(float)
+    result = np.empty(n, dtype=float)
+    half = window // 2
+    cumsum = np.cumsum(np.concatenate([[0.0], values], dtype=float))
+    for i in range(n):
+        lo = max(0, i - half)
+        hi = min(n, i + half + 1)
+        result[i] = (cumsum[hi] - cumsum[lo]) / (hi - lo)
+    return result
 
 
 def _load_last_run(log_csv_path: Path) -> dict[str, np.ndarray]:
-    """Read CSV and return only the last contiguous run (final game=0 onward)."""
+    """Read CSV and return all rows from the most recent fresh start.
+
+    A fresh start is marked by game=0 appearing in the log.  For resumed
+    runs (game counter continues from 10000+) there is no new game=0, so
+    all appended rows are shown as a continuation of the existing curve.
+
+    Rows where all metric columns are zero (the warmup-not-yet-evaluated
+    first row) are dropped to avoid an artificial spike at the origin.
+    """
     import csv
 
     all_rows: list[dict] = []
@@ -32,24 +52,34 @@ def _load_last_run(log_csv_path: Path) -> dict[str, np.ndarray]:
     if not all_rows:
         return {}
 
-    # Find final run start
+    # Find most-recent fresh start (last occurrence of game=0)
     last_start = 0
     for i, row in enumerate(all_rows):
         if int(row["game"]) == 0:
             last_start = i
     all_rows = all_rows[last_start:]
 
+    # Drop rows where every metric is 0 — these are pre-warmup dummy rows
+    _METRIC_KEYS = ("win_rate_vs_random", "win_rate_vs_heuristic", "mean_ep_len")
+    filtered = []
+    for row in all_rows:
+        vals = [float(row.get(k, 0) or 0) for k in _METRIC_KEYS]
+        if any(v != 0.0 for v in vals):
+            filtered.append(row)
+    if not filtered:
+        filtered = all_rows  # fallback: keep all if everything looks empty
+
     def _col(key: str, default: float = 0.0) -> np.ndarray:
-        return np.array([float(r.get(key, default) or default) for r in all_rows])
+        return np.array([float(r.get(key, default) or default) for r in filtered])
 
     return {
-        "games":              _col("game"),
-        "epsilons":           _col("epsilon"),
-        "losses":             _col("loss"),
-        "win_rate_vs_random": _col("win_rate_vs_random"),
+        "games":                 _col("game"),
+        "epsilons":              _col("epsilon"),
+        "losses":                _col("loss"),
+        "win_rate_vs_random":    _col("win_rate_vs_random"),
         "win_rate_vs_heuristic": _col("win_rate_vs_heuristic"),
-        "ep_lens":            _col("mean_ep_len"),
-        "lr":                 _col("lr"),
+        "ep_lens":               _col("mean_ep_len"),
+        "lr":                    _col("lr"),
     }
 
 
@@ -158,7 +188,7 @@ def generate_benchmark_plot(
     benchmark_csv_path: Path | str,
     board_size: int,
     out_dir: Path | str,
-    rolling_window: int = 100,
+    rolling_window: int = 20,
 ) -> Path | None:
     """Read benchmark_log.csv and write benchmark_curve.png.
 

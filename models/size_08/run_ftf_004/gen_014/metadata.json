@@ -1,0 +1,33 @@
+{
+  "version_id": "gen_014",
+  "board_size": 8,
+  "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\run_ftf_004\\gen_014\\weights.pt",
+  "run_id": "run_ftf_004",
+  "created_at": "2026-06-02T11:46:55.597761+00:00",
+  "games_trained": 10010,
+  "gradient_steps": 0,
+  "epsilon_at_freeze": 0.050000000000000044,
+  "parent_run_id": "15ddc3c9-a483-45df-879f-b08aaea87591",
+  "parent_version_id": null,
+  "win_rate_vs_random": 1.0,
+  "win_rate_vs_heuristic": 0.2,
+  "win_rate_vs_self": null,
+  "elo_rating": 800.4,
+  "mean_episode_length": null,
+  "training_history": [
+    {
+      "games_trained": 10010,
+      "win_rate_vs_random": 1.0,
+      "elo_rating": 800.4
+    }
+  ],
+  "friendly_name": "Beginner",
+  "difficulty_band": "novice",
+  "notes": "",
+  "model_version": 2,
+  "state_channels": 10,
+  "network_arch": "resnet_v1",
+  "parent_schedule_path": null,
+  "human_games_seen": 0,
+  "benchmark_summary": null
+}

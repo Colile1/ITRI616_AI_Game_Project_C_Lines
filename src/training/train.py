@@ -41,6 +41,7 @@ import numpy as np
 import torch
 
 import src.config as _cfg
+from src.agents.base_agent import BaseAgent
 from src.agents.dqn_agent import DQNAgent
 from src.agents.random_agent import RandomAgent
 from src.agents.heuristic_agent import HeuristicAgent
@@ -61,6 +62,7 @@ from src.config import (
     USE_SYMMETRY_AUGMENTATION,
     BENCHMARK_EVERY_N_GAMES_SMALL, BENCHMARK_EVERY_N_GAMES_LARGE,
     BENCHMARK_GAMES_PER_CHECK, MIN_POOL_WR,
+    N_STEP_RETURNS, GAMMA,
 )
 from src.game.env import GameEnv
 from src.training.replay_buffer import ReplayBuffer
@@ -302,6 +304,21 @@ def _make_opponent_from_signal(
 
 
 # ---------------------------------------------------------------------------
+# Static previous-best opponent
+# ---------------------------------------------------------------------------
+
+def _load_static_opponent(weights_path: str, board_size: int) -> DQNAgent:
+    """Load a frozen DQNAgent from a weights file. epsilon=0, no training."""
+    agent = DQNAgent(board_size, eval_only=True,
+                     in_channels=STATE_CHANNELS_V2, network_arch=NETWORK_ARCH)
+    sd = torch.load(weights_path, map_location="cpu", weights_only=True)
+    agent.load_state_dict(sd)
+    agent.set_epsilon(0.0)
+    agent._pool_label = f"prev_best:{Path(weights_path).parts[-3]}"
+    return agent
+
+
+# ---------------------------------------------------------------------------
 # Resume helper
 # ---------------------------------------------------------------------------
 
@@ -318,6 +335,16 @@ def _load_resume_state(board_size: int, run_id: str, agent: DQNAgent) -> int:
     eps = linear_epsilon(EPS_START, EPS_END, resume_from, EPS_DECAY_GAMES)
     agent.set_epsilon(eps)
     print(f"  [resume] Loaded {latest.version_id} ({resume_from} games, eps={eps:.3f})")
+
+    # Clear any stale mode.txt that could cause immediate quit (e.g. copied from a previous run)
+    results_run = _cfg.RESULTS_DIR / f"size_{board_size:02d}" / run_id
+    mode_sig = results_run / "mode.txt"
+    if mode_sig.exists():
+        sig = mode_sig.read_text().strip().lower()
+        if sig in ("quit", "q"):
+            mode_sig.unlink()
+            print(f"  [resume] Removed stale mode.txt (was '{sig}')")
+
     return resume_from
 
 
@@ -335,6 +362,9 @@ def train(
     resume: bool = False,
     start_human: bool = False,
     human_agent_override=None,   # UIHumanAgent injected by _launch_with_ui
+    load_weights: str | None = None,    # path to weights.pt to seed the training agent
+    start_game: int | None = None,      # override the starting game counter
+    prev_best_weights: str | None = None,  # path to frozen opponent replacing RandomAgent
 ) -> None:
     """Auto-train with all improvements active.
 
@@ -366,6 +396,22 @@ def train(
     buffer = ReplayBuffer(REPLAY_CAPACITY, use_augmentation=use_augmentation)
     env    = GameEnv(board_size=board_size, mode=mode)
 
+    # Seed agent weights from a previous run's best model (--load-weights)
+    if load_weights:
+        sd = torch.load(load_weights, map_location="cpu", weights_only=True)
+        agent.load_state_dict(sd)
+        print(f"  [load_weights] Loaded initial weights from {load_weights}")
+
+    # Static frozen opponent replacing RandomAgent (--prev-best)
+    if prev_best_weights:
+        static_opp = _load_static_opponent(prev_best_weights, board_size)
+        print(f"  [prev_best] Using frozen model as base opponent: {prev_best_weights}")
+    else:
+        static_opp = None
+
+    # Effective random/base opponent — use frozen prev_best if provided, else RandomAgent
+    random_opp: BaseAgent = static_opp if static_opp is not None else RandomAgent()
+
     # Benchmark
     bm_logger: BenchmarkLogger | None = None
     if benchmark_name:
@@ -383,9 +429,6 @@ def train(
 
     game_logger = GameLogger(results_run / "game_log.csv")
 
-    warmup_opponents = [RandomAgent(), HeuristicAgent()]
-    random_opp = RandomAgent()
-
     snapshot_pool: list = []
     history: list[TrainingHistoryEntry] = []
     parent_version_id: str | None = None
@@ -395,8 +438,10 @@ def train(
     current_lr = LR
     plateau_count = 0
     best_wr_heuristic = 0.0
-    min_lr = LR * 0.125   # floor: three halving steps maximum
-    agent_elo = 800.0     # starting Elo estimate for a fresh agent
+    best_ep_len = float("inf")   # F1: FTF primary metric — lower is better
+    min_lr = LR * 0.125          # floor: three halving steps maximum
+    agent_elo = 800.0            # starting Elo estimate for a fresh agent
+    recent_ep_lens: list[float] = []   # F6: rolling window for adaptive threshold
 
     # Human mode state — use injected UI agent or fall back to terminal
     is_human_mode = start_human or (human_agent_override is not None)
@@ -409,12 +454,22 @@ def train(
     else:
         human_agent = None
 
-    start_game = 0
-    if resume:
-        start_game = _load_resume_state(board_size, run_id, agent)
+    # start_game resolution (param shadows the local variable):
+    # Priority: explicit --start-game > resume snapshot > 0
+    _sg_override = start_game   # save the param before any local shadows
+    if resume and _sg_override is None:
+        _sg_from_resume = _load_resume_state(board_size, run_id, agent)
+    else:
+        _sg_from_resume = 0
+    start_game = _sg_override if _sg_override is not None else _sg_from_resume
+    # If --load-weights given without --resume, still set epsilon for the offset
+    if load_weights and not resume and start_game > 0:
+        eps = linear_epsilon(EPS_START, EPS_END, start_game, EPS_DECAY_GAMES)
+        agent.set_epsilon(eps)
+        print(f"  [start_game] Starting at game {start_game}, eps={eps:.3f}")
 
     train_start = time.monotonic()
-    csv_mode = "a" if resume and log_path.exists() else "w"
+    csv_mode = "a" if (resume or start_game > 0) and log_path.exists() else "w"
     log_file = log_path.open(csv_mode, newline="")
     writer = csv.writer(log_file)
     if csv_mode == "w":
@@ -538,32 +593,40 @@ def train(
                 game_idx  = game_idx,
             )
 
+        ep_len = len(t1) + len(t2)
+
+        # ---- F6: Adaptive early-loss threshold ----
+        # Track recent episode lengths to adjust the "early loss" threshold.
+        recent_ep_lens.append(ep_len)
+        if len(recent_ep_lens) > 500:
+            recent_ep_lens.pop(0)
+        if recent_ep_lens:
+            recent_mean = float(np.mean(recent_ep_lens))
+            adaptive_threshold = max(FTF_EARLY_LOSS_TURNS, int(recent_mean * 1.2))
+        else:
+            adaptive_threshold = FTF_EARLY_LOSS_TURNS
+
         # ---- FTF synthetic loss transition ----------------------------------------
         # In first_to_four mode the LOSER never makes the final move, so they never
         # receive a done=True terminal reward from the environment.  Without it the
         # early-loss penalty and the normal -1 signal are both invisible to the DQN.
-        # Fix: after every episode where the DQN lost, push one synthetic transition
-        # that carries the graduated loss reward so the Q-function can learn to avoid
-        # those states.
         if (mode == MODE_FIRST_TO_FOUR
                 and ep_winner is not None
                 and ep_winner != agent_player
                 and learner_transitions):
-            ep_len     = len(t1) + len(t2)
-            loss_rew   = (LOSS_REWARD - FTF_EARLY_LOSS_EXTRA
-                          if ep_len <= FTF_EARLY_LOSS_TURNS
-                          else LOSS_REWARD)
-            last_t     = learner_transitions[-1]
-            # State AFTER the DQN's last move — this is the position from which the
-            # opponent then went on to complete their 4-in-a-row.
+            loss_rew = (LOSS_REWARD - FTF_EARLY_LOSS_EXTRA
+                        if ep_len <= adaptive_threshold
+                        else LOSS_REWARD)
+            last_t   = learner_transitions[-1]
             buffer.push(
                 last_t.next_state,
                 last_t.action,
                 loss_rew,
-                last_t.next_state,   # terminal — target value = reward only
-                True,                # done=True
+                last_t.next_state,
+                True,
                 np.zeros(board_size ** 2, dtype=bool),
                 weight=source_weight,
+                gamma_n=GAMMA,
             )
         # -----------------------------------------------------------------------
 
@@ -572,6 +635,7 @@ def train(
                 t.state, t.action, t.reward,
                 t.next_state, t.done, t.legal_mask_next,
                 weight=source_weight,
+                gamma_n=t.gamma_n,
             )
 
         # ---- Gradient steps ----
@@ -596,16 +660,31 @@ def train(
             games_done = game_idx - start_game + 1
             gph = games_done / elapsed * 3600 if elapsed > 0 else 0
 
-            wr_h = eval_stats.get("win_rate_vs_heuristic", 0.0)
+            wr_h   = eval_stats.get("win_rate_vs_heuristic", 0.0)
+            ep_len_eval = eval_stats.get("mean_ep_len", float("inf"))
 
-            # Best-model checkpoint
-            if wr_h > best_wr_heuristic:
-                best_wr_heuristic = wr_h
-                _save_best(agent, best_dir, wr_h, game_idx)
-                plateau_count = 0
-                print(f"  [best] New best WR vs heuristic: {wr_h:.2%} at game {game_idx}")
+            # F1: FTF uses mean episode length as primary metric (lower = better).
+            # PTS mode still uses WR vs heuristic (higher = better).
+            if mode == MODE_FIRST_TO_FOUR:
+                improved = ep_len_eval < best_ep_len
+                if improved:
+                    best_ep_len = ep_len_eval
+                    best_wr_heuristic = wr_h   # track for logging even if not primary
+                    _save_best(agent, best_dir, wr_h, game_idx)
+                    plateau_count = 0
+                    print(f"  [best] New best ep_len: {ep_len_eval:.1f} (wr_h={wr_h:.2%}) at game {game_idx}")
+                else:
+                    plateau_count += 1
+                    if wr_h > best_wr_heuristic:
+                        best_wr_heuristic = wr_h
             else:
-                plateau_count += 1
+                if wr_h > best_wr_heuristic:
+                    best_wr_heuristic = wr_h
+                    _save_best(agent, best_dir, wr_h, game_idx)
+                    plateau_count = 0
+                    print(f"  [best] New best WR vs heuristic: {wr_h:.2%} at game {game_idx}")
+                else:
+                    plateau_count += 1
 
             # Plateau-based LR decay
             current_lr, plateau_count = _maybe_decay_lr(
@@ -683,15 +762,21 @@ def train(
         if game_idx % 100 == 0:
             wr_r = eval_stats.get("win_rate_vs_random", 0)
             wr_h = eval_stats.get("win_rate_vs_heuristic", 0)
+            ep_len_pr = eval_stats.get("mean_ep_len", 0)
             elapsed = time.monotonic() - train_start
             games_done = game_idx - start_game + 1
             gph = games_done / elapsed * 3600 if elapsed > 0 else 0
             remaining = (n_games - game_idx) / (gph / 3600) if gph > 0 else 0
             eta = str(timedelta(seconds=int(remaining)))
             mode_str = "HUMAN" if is_human_mode else "auto"
-            print(f"  game {game_idx:5d}  eps={epsilon:.3f}  lr={current_lr:.1e}"
-                  f"  loss={last_loss:.4f}  wr_rand={wr_r:.2%}  wr_heur={wr_h:.2%}"
-                  f"  best={best_wr_heuristic:.2%}  [{mode_str}]  {gph:.0f} g/h  ETA {eta}")
+            if mode == MODE_FIRST_TO_FOUR:
+                print(f"  game {game_idx:5d}  eps={epsilon:.3f}  lr={current_lr:.1e}"
+                      f"  loss={last_loss:.4f}  ep_len={ep_len_pr:.1f}  best_len={best_ep_len:.1f}"
+                      f"  wr_heur={wr_h:.2%}  [{mode_str}]  {gph:.0f} g/h  ETA {eta}")
+            else:
+                print(f"  game {game_idx:5d}  eps={epsilon:.3f}  lr={current_lr:.1e}"
+                      f"  loss={last_loss:.4f}  wr_rand={wr_r:.2%}  wr_heur={wr_h:.2%}"
+                      f"  best={best_wr_heuristic:.2%}  [{mode_str}]  {gph:.0f} g/h  ETA {eta}")
 
     log_file.close()
     game_logger.close()
@@ -699,6 +784,9 @@ def train(
         bm_logger.close()
 
     final_stats = _evaluate(agent, board_size, mode)
+    # R1: compute Elo before the final freeze so gen_N has a valid elo_rating
+    agent_elo = _elo_update(agent_elo, agent, board_size, mode, n_games=40)
+    final_stats["elo_rating"] = agent_elo
     freeze(
         agent, n_games, final_stats, board_size, run_id,
         parent_run_id=parent_run_uuid,
@@ -1003,6 +1091,12 @@ def _parse_args() -> argparse.Namespace:
                    help="Resume from the latest snapshot for --run-id")
     p.add_argument("--human",          action="store_true", default=False,
                    help="Start training in human-play mode (terminal input)")
+    p.add_argument("--load-weights",   type=str, default=None,
+                   help="Path to weights.pt to seed the training agent (e.g. previous run's best/weights.pt)")
+    p.add_argument("--start-game",     type=int, default=None,
+                   help="Override the starting game counter (e.g. 10000 to continue from game 10001)")
+    p.add_argument("--prev-best",      type=str, default=None,
+                   help="Path to a frozen weights.pt used as the static base opponent instead of RandomAgent")
     return p.parse_args()
 
 
@@ -1031,6 +1125,8 @@ def main() -> None:
             use_augmentation=use_aug,
             resume=args.resume,
         )
+        # Note: --load-weights / --start-game / --prev-best not yet wired into UI mode
+        # (UI mode is interactive; these flags only affect auto training)
     else:
         train(
             board_size=args.size,
@@ -1041,6 +1137,9 @@ def main() -> None:
             use_augmentation=use_aug,
             resume=args.resume,
             start_human=False,
+            load_weights=args.load_weights,
+            start_game=args.start_game,
+            prev_best_weights=args.prev_best,
         )
 
 

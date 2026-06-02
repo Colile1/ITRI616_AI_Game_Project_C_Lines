@@ -73,6 +73,9 @@ class DQNAgent(BaseAgent):
         next_states = torch.from_numpy(batch["next_states"]).to(self._device)
         dones       = torch.from_numpy(batch["dones"]).to(self._device)
         legal_next  = torch.from_numpy(batch["legal_masks_next"]).to(self._device)
+        # Per-transition bootstrap discount: GAMMA^n for n-step returns, GAMMA for 1-step.
+        gammas = torch.from_numpy(batch["gammas"]).to(self._device) if "gammas" in batch else \
+                 torch.full((rewards.shape[0],), GAMMA, dtype=torch.float32, device=self._device)
 
         with torch.no_grad():
             # Double DQN: online net selects the action, target net evaluates it.
@@ -86,7 +89,7 @@ class DQNAgent(BaseAgent):
             q_next_target = self._target(next_states)
             next_q = q_next_target.gather(1, next_actions).squeeze(1)
 
-            targets = rewards - GAMMA * next_q * (1.0 - dones)
+            targets = rewards - gammas * next_q * (1.0 - dones)
 
         q_pred = self._online(states)
         q_pred_actions = q_pred.gather(1, actions.unsqueeze(1)).squeeze(1)

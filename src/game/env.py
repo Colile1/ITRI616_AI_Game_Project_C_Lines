@@ -8,7 +8,7 @@ import numpy as np
 from src.config import (
     MODE_FIRST_TO_FOUR, MODE_POINTS_FULL, DEFAULT_MODE,
     DEFAULT_BOARD_SIZE, WIN_REWARD, LOSS_REWARD, DRAW_REWARD,
-    STEP_REWARD_SCALE, FTF_THREAT_SCALE,
+    STEP_REWARD_SCALE, FTF_THREAT_SCALE, FTF_THREAT_SCALE_4,
     FTF_EARLY_LOSS_TURNS, FTF_EARLY_LOSS_EXTRA,
     PLAYER_1, PLAYER_2, STATE_CHANNELS,
 )
@@ -17,7 +17,7 @@ from src.engine.rules import (
     apply_placement, check_terminal_mode1, check_terminal_mode2,
     is_legal_placement,
 )
-from src.engine.scoring import compute_scores, compute_threats
+from src.engine.scoring import compute_scores, compute_threats, compute_double_threats
 from src.game.encoding import state_to_tensor, build_legal_mask, index_to_action
 
 
@@ -40,6 +40,7 @@ class GameEnv:
         self._board: Board = setup_board(board_size)
         self._prev_scores: tuple[float, float] = (0.0, 0.0)
         self._prev_threats: tuple[int, int] = (0, 0)
+        self._prev_double_threats: tuple[int, int] = (0, 0)
 
     # ------------------------------------------------------------------
     # Public API
@@ -49,6 +50,7 @@ class GameEnv:
         self._board = setup_board(self.board_size)
         self._prev_scores = (0.0, 0.0)
         self._prev_threats = (0, 0)
+        self._prev_double_threats = (0, 0)
         return self._obs()
 
     def step(self, action_idx: int) -> tuple[np.ndarray, float, bool, dict[str, Any]]:
@@ -119,11 +121,18 @@ class GameEnv:
             p1_t_now, p2_t_now = compute_threats(self._board)
             p1_t_prev, p2_t_prev = self._prev_threats
             self._prev_threats = (p1_t_now, p2_t_now)
+
+            p1_d_now, p2_d_now = compute_double_threats(self._board)
+            p1_d_prev, p2_d_prev = self._prev_double_threats
+            self._prev_double_threats = (p1_d_now, p2_d_now)
+
             if acting_player == PLAYER_1:
                 threat_delta = (p1_t_now - p1_t_prev - (p2_t_now - p2_t_prev)) * FTF_THREAT_SCALE
+                double_delta = (p1_d_now - p1_d_prev - (p2_d_now - p2_d_prev)) * FTF_THREAT_SCALE_4
             else:
                 threat_delta = (p2_t_now - p2_t_prev - (p1_t_now - p1_t_prev)) * FTF_THREAT_SCALE
-            return threat_delta
+                double_delta = (p2_d_now - p2_d_prev - (p1_d_now - p1_d_prev)) * FTF_THREAT_SCALE_4
+            return threat_delta + double_delta
 
         else:
             # ----------------------------------------------------------------

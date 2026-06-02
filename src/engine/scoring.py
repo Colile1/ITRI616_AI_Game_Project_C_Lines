@@ -104,3 +104,48 @@ def compute_threats(board: Board) -> tuple[int, int]:
     p1 = count_open_threats(board, 1, 3)
     p2 = count_open_threats(board, 2, 3)
     return p1, p2
+
+
+def count_double_open_threats(board: Board, player: int, run_length: int) -> int:
+    """Count runs of exactly run_length with BOTH ends free — a forced-win threat.
+
+    Stronger than count_open_threats (at-least-one-free-end): a double-open run
+    cannot be blocked in one move, making it a guaranteed win in FTF mode.
+    """
+    n = board.size
+    grid = board.grid
+    total = 0
+    for dr, dc in _DIRECTIONS:
+        for r in range(n):
+            for c in range(n):
+                if grid[r, c] != player:
+                    continue
+                pr, pc = r - dr, c - dc
+                if 0 <= pr < n and 0 <= pc < n and grid[pr, pc] == player:
+                    continue
+                length = 0
+                nr, nc = r, c
+                while 0 <= nr < n and 0 <= nc < n and grid[nr, nc] == player:
+                    length += 1
+                    nr += dr
+                    nc += dc
+                if length != run_length:
+                    continue
+                back_free = (
+                    0 <= r - dr < n and 0 <= c - dc < n
+                    and grid[r - dr, c - dc] == 0
+                )
+                front_free = (
+                    0 <= nr < n and 0 <= nc < n
+                    and grid[nr, nc] == 0
+                )
+                if back_free and front_free:
+                    total += 1
+    return total
+
+
+def compute_double_threats(board: Board) -> tuple[int, int]:
+    """Return (p1_double_open3, p2_double_open3) — forced-win threat counts."""
+    p1 = count_double_open_threats(board, 1, 3)
+    p2 = count_double_open_threats(board, 2, 3)
+    return p1, p2

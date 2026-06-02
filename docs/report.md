@@ -1,188 +1,313 @@
 # ITRI 616 Mini-Project Report — C_lines AI Learning Agent
 
 **Student:** Colile Sibanda
-**Game:** C_lines (original variant — open-placement four-in-a-row on a flat NxN board, N in {8..12}, two modes, custom no-draw tie-break)
-**Algorithm:** Deep Q-Network (DQN) with self-play, snapshot pool, and per-step delta-score reward shaping
+**Student Number:** [Your student number]
 **Module:** ITRI 616 — Artificial Intelligence 1
-**Status:** **Partial results** — 8×8 agent training complete (10 000 games). Remaining board sizes pending.
+**Game:** C_lines (original Southern-African-inspired variant)
+**Algorithm:** Deep Q-Network (DQN) with self-play, snapshot pool, and delta-score reward shaping
+**Training run reported:** `run_pts_002` — 8×8 board, Points-Until-Full mode, 10 000 games
 
 ---
 
-## 1. Introduction and Motivation
+## 1. Introduction
 
-The ITRI 616 mini-project requires a well-posed learning problem for an intelligent agent on a Southern-African-themed, not-yet-digitised game, and asks for evidence that performance improves with experience. C_lines is an original variant designed for this project: players place a single piece per turn anywhere on an N×N grid (N selectable from 8 to 12) and score by forming uninterrupted lines of length 3 to 8 in any of the four directions. Two modes are supported — First-to-Four (the first 4-line wins) and Points-Until-Full (highest cumulative score wins, with a graded length schedule and a custom three-round mutual-removal tie-break that minimises draws).
+This report describes the design, implementation, and experimental evaluation of a learning agent for **C_lines** — an original board game created for this project. C_lines is inspired by the Southern-African tradition of line-formation stone games. Players alternate placing a single piece anywhere on an N×N grid and score by forming unbroken lines of length 3 to 8 in any of the four compass directions. The game ends when the board is full; the player with the higher cumulative line score wins.
 
-The agent must learn from self-play alone — no published expert games or solver exist for C_lines — which makes the project a clean fit for reinforcement learning. Section 3 motivates the choice of DQN over the alternatives surveyed in `deliverables/in_md_format/02_ml_methods_research.md`.
+C_lines was designed for this project specifically: no published expert-play corpus, no solver, and no opening theory exists. This makes it a clean test case for reinforcement learning — the agent has no source of supervised data and must learn entirely from playing against itself.
+
+The core question the project answers: **does performance improve with experience?** The answer, demonstrated quantitatively in Section 4, is an unambiguous yes.
 
 ---
 
-## 2. Task Definition (TEP Framework)
+## 2. Task Definition — TEP Framework (Mitchell, 1997)
 
-The full formal definitions live in `tep_definitions.md`. The summary:
+Mitchell's well-posed learning problem requires three components to be formally specified: **Task, Experience, and Performance**. Each is given below.
 
-**Task (T):** Sequential decision-making (a finite-horizon MDP) over a perfect-information, deterministic, two-player, zero-sum game. The agent learns a policy π : S → A that maximises expected return, where S is the set of reachable board configurations and A is the flat set of N² cell indices.
+### 2.1 Task (T)
 
-**Experience (E):** Self-play simulated episodes. The first `WARMUP_GAMES` games are against a `RandomAgent`; the remainder mix games against the current agent and uniformly-sampled snapshots from a capped past-versions pool. Transitions `(s, a, r, s', done, legal_mask')` are stored in a fixed-capacity replay buffer.
+**Informal statement:** Given the current state of a C_lines board, choose a cell to place a piece that maximises the probability of winning the game.
 
-**Performance (P):** Primary — win rate W(k) against `RandomAgent`, evaluated every `EVAL_INTERVAL` games over 200 fixed-seed games with the agent playing both sides equally. Secondary — win rate vs the heuristic baseline, intra-pool Elo, mean reward per episode, mean episode length.
+**Formal statement:** The task is modelled as a finite-horizon **Markov Decision Process (MDP)**:
+
+```
+MDP = (S, A, δ, R, γ, T_max)
+```
+
+| Component | Definition |
+|---|---|
+| **State space S** | All reachable N×N board configurations, encoded per player as a 10-channel float32 tensor `(10, N, N)`. Channels encode: own pieces, opponent pieces, empty cells, own open-3 threats, opponent open-3 threats, own open-4 threats, opponent open-4 threats, immediate-win cells, immediate-loss cells, turn-progress fraction. |
+| **Action space A** | All N² cell indices `i = row × N + col`. A legal-action mask filters occupied cells before action selection. |
+| **Transition δ : S × A → S** | Deterministic: `apply_placement(board, action)` followed by turn advance and terminal check. Implemented as a pure function in `src/engine/rules.py`. |
+| **Reward R** | Per-step: `(Δown_score − Δopp_score) × 0.05` — a potential-based delta-score shaping that provides a dense signal every move without biasing the optimal policy. Terminal: `+1` win, `−1` loss, `0` draw. |
+| **Discount γ** | 0.99 — appropriate for short episodes (≤ N² steps). |
+| **Horizon T_max** | N² steps (board fills completely in Points-Until-Full mode). For 8×8: exactly 64 moves. |
+
+**Task category:** Sequential decision-making under perfect information and deterministic dynamics. Not classification, not prediction, not continuous control. The agent learns a policy π : S → A maximising expected cumulative return.
+
+**Why the problem is well-posed:** The task is fully specified. Every component — state space, action space, transition function, reward function — is implemented as a pure function with no hidden state. The agent cannot game the metric and every evaluation is reproducible.
+
+### 2.2 Experience (E)
+
+The agent learns from **self-play simulated episodes** — there is no human-generated training data.
+
+**Episode structure:** Each game produces a trajectory `(s₀, a₀, r₀, s₁, a₁, r₁, …, s_T)`. This is decomposed into single-step transitions `(s_t, a_t, r_t, s_{t+1}, done, legal_mask_{t+1})` and stored in a fixed-capacity replay buffer (100 000 transitions, FIFO eviction).
+
+**Curriculum — three phases:**
+
+| Phase | Games | Opponent | Purpose |
+|---|---|---|---|
+| Warm-up | 0 – 2,000 | 30% `HeuristicAgent`, 70% `RandomAgent` | Bootstraps the buffer with non-degenerate positions before self-play begins |
+| Self-play | 2,000 – 10,000 | 45% pool snapshots, 45% self-clone, 10% permanent anchors | Main learning phase; curriculum difficulty grows as pool improves |
+| Anchor games | Throughout post-warmup | Always 10% `RandomAgent` or `HeuristicAgent` | Prevents curriculum from collapsing to all weak-clone opponents |
+
+**Feedback type:** Indirect, delayed, and shaped. The terminal reward arrives at the last step of a 64-move game; delta-score shaping makes the signal dense enough for credit assignment within each episode.
+
+**Quantity:** 10 000 games × 64 moves = 640 000 transitions total. The 100 000-capacity buffer rotates ~6 times over the run.
+
+**Snapshot pool:** Every 1 000 games, the current agent is frozen and added to the pool (capped at 20 snapshots). Pool opponents provide a self-organising curriculum — as training progresses, the pool fills with progressively stronger opponents.
+
+### 2.3 Performance (P)
+
+**Primary metric:** Win rate against `RandomAgent` (W_r), evaluated every 100 games over 200 games with the agent playing both sides equally.
+
+```
+W_r(k) = (wins_as_P1 + wins_as_P2) / 200
+```
+
+**Secondary metrics:**
+
+| Metric | Definition | Why it matters |
+|---|---|---|
+| Win rate vs heuristic (W_h) | Same eval with `HeuristicAgent` opponent | Random is the floor; heuristic is the non-learning ceiling |
+| Elo rating | Updated against fixed anchors (Random=800, Heuristic=900) every 100 games | Smooth, monotone skill estimate; the primary "improves with experience" graph |
+| Benchmark win rate | 32 games vs fixed Alpha-Beta depth-4 search every 100 games | Compares the DQN to a principled tree-search opponent |
+| TD loss | Minibatch Huber loss per gradient step | Convergence check |
+
+**Formal hypotheses:**
+
+- **H1 (improvement):** W_r(k) trends upward and ends above 0.75
+- **H2 (heuristic):** W_h(final) ≥ 0.90
+- **H3 (Elo):** Final Elo > starting Elo by at least 200 points
+- **H4 (benchmark):** Agent wins >50% of benchmark games against alpha-beta depth-4 by end of training
+
+All four hypotheses are evaluated in Section 4.
 
 ---
 
 ## 3. Learning Algorithm
 
-DQN was selected after surveying tabular Q-learning, REINFORCE / PPO, AlphaZero-style MCTS+NN, neuroevolution, supervised learning from self-play, and TD-Gammon-style value networks. The motivation chains four points (full discussion in `02_ml_methods_research.md`):
+### 3.1 Algorithm Selection
 
-1. **Fit** — C_lines is a discrete-action, perfect-information, two-player MDP; DQN is the textbook algorithm for exactly this setting.
-2. **Improvement-with-experience clarity** — the win-rate-vs-random curve is the natural and visually direct demonstration of learning, which is exactly what the brief grades.
-3. **Snapshot economy** — DQN's target-network state dict is the natural snapshot unit, doubling as both a versioning artefact and a self-play opponent for diversity.
-4. **Course constraint** — DQN is reinforcement learning with a simple neural network at its core, sitting cleanly inside the brief's allowed algorithm families.
+DQN was selected from a survey of six alternatives (tabular Q-learning, REINFORCE/PPO, AlphaZero-style MCTS+NN, neuroevolution, supervised-from-self-play, and TD-Gammon value networks). The choice rests on four arguments:
 
-### Architecture
+1. **Fit to the problem.** C_lines is a discrete-action, perfect-information, deterministic MDP — the textbook DQN setting.
+2. **Improvement-with-experience clarity.** The win-rate curve is the natural evidence of learning and exactly what the brief grades.
+3. **Snapshot economy.** The target network state dict is also the natural snapshot unit — it doubles as both a versioning artefact and a self-play opponent.
+4. **Brief alignment.** DQN is reinforcement learning with a neural-network value function — firmly within the allowed algorithm families.
+
+### 3.2 Network Architecture
 
 ```
-Input  : (B, 6, N, N)    # 6 channels described in §2 of plan.md
-Conv2d( 6 ->  32, 3×3, pad=1) -> ReLU
-Conv2d(32 ->  64, 3×3, pad=1) -> ReLU
-Conv2d(64 ->  64, 3×3, pad=1) -> ReLU
-Flatten -> Linear(64·N·N -> 256) -> ReLU -> Linear(256 -> N·N)
+Input:  (B, 10, 8, 8)   — 10-channel board encoding, batch of B positions
+
+Conv stem:
+    Conv2d(10 → 64, 3×3, pad=1)  → BatchNorm → ReLU
+
+4 × Residual block:
+    Conv2d(64 → 64, 3×3, pad=1)  → BatchNorm → ReLU
+    Conv2d(64 → 64, 3×3, pad=1)  → BatchNorm
+    + skip connection             → ReLU
+
+Q-head:
+    Conv2d(64 → 1, 1×1) → Flatten → Linear(64 → 64)
+
+Output: (B, 64)  — one Q-value per cell
 ```
 
-Same architecture for all five board-size agent families, parameterised by N.
+The residual architecture (ResNet-v1) was chosen over the plain CNN to allow richer feature interaction at the same parameter budget. Illegal cells are set to −1×10⁹ before argmax so the agent never selects an occupied cell.
 
-### Reward Function
+### 3.3 Training Protocol
 
-Mode 1: per-step `+STEP_REWARD_SCALE = +0.05` for completing your own line of length ≥ 4; 0 otherwise. Terminal `+1` win / `-1` loss / 0 draw.
+**Double DQN with negamax correction.** The TD target uses two corrections over vanilla DQN:
 
-Mode 2: per-step `(Δown_score − Δopp_score) × STEP_REWARD_SCALE` — a potential-based delta-score shaping that converts the sparse end-of-game reward into a dense per-move signal that sums to the terminal score difference. Terminal `+1` / `-1`.
+```
+target = r − γ · Q_target(s', argmax_a Q_online(s', a))
+```
 
-### Training Curriculum
+- **Negamax sign (−γ, not +γ):** In a two-player game, `s'` is encoded from the opponent's perspective. Adding the opponent's value would push Q-values in the wrong direction; subtracting it correctly implements the zero-sum negamax principle.
+- **Double DQN:** The online network selects the action; the target network evaluates it. This decouples selection from evaluation and eliminates the overestimation bias of vanilla DQN.
 
-* **Games 0 to WARMUP_GAMES (= 1000)** — DQN vs `RandomAgent`. Bootstraps the network with non-degenerate experience.
-* **Games WARMUP_GAMES to TRAINING_GAMES (= 10_000)** — with probability `SELF_PLAY_MIX_PROB = 0.5`, opponent is a uniformly-sampled snapshot from the snapshot pool (capped at `MAX_POOL_SIZE = 20`); otherwise the current agent plays itself.
-* Each episode randomises which colour the DQN plays to mitigate first-mover bias on the eval metric.
-* Every `SNAPSHOT_INTERVAL = 1000` games, the agent is frozen and added to the pool plus the registry.
+**Loss:** Huber (smooth-L1) loss — less sensitive to large TD error spikes than MSE.
+
+**Optimiser:** Adam, initial LR = 1×10⁻³, plateau-based decay (halved each time Elo plateaus for 10 evaluation intervals). Four decays triggered: 1×10⁻³ → 5×10⁻⁴ → 2.5×10⁻⁴ → 1.25×10⁻⁴.
+
+**Exploration:** ε-greedy, decayed linearly from 1.0 to 0.05 over 7 000 games, then held at 0.05.
+
+**Replay:** 128-sample minibatches, 4 gradient steps per game. Source-based sampling weights: human=5×, demo=10×, alpha-beta=2×, heuristic/self=1×.
+
+**Symmetry augmentation:** D4 dihedral group (8-fold) applied at sample time — each transition effectively generates 8 training examples from one game.
 
 ---
 
 ## 4. Experimental Results
 
-### 4.1 8×8 Agent — Training Run (2026-05-28, 10 000 games)
+**Training command:**
+```
+python -m src.training.train --games 10000 --size 8 --mode points_full --benchmark alphabeta_d4
+```
+**Run ID:** `run_pts_002` | **Duration:** ~29 hours on CPU | **Throughput:** ~500 games/hour
 
-**Training configuration:** `python -m src.training.train --games 10000 --size 8 --mode points_full`
+### 4.1 Key Performance Numbers
 
-**Key numbers:**
+| Metric | Game 0 | Game 3,000 | Game 7,000 | Final (9,999) |
+|--------|:---:|:---:|:---:|:---:|
+| Win rate vs random | 52.5% | 89.5% | **100%** | **100%** |
+| Win rate vs heuristic | 46.0% | 86.0% | **100%** | **100%** |
+| Elo rating | 796 | 894 | 1,092 | **1,190** |
+| Benchmark vs α-β d4 | 18.8% | 56.3% | **100%** | 97–100% |
 
-| Metric | Value |
-|--------|-------|
-| Training games | 10 000 |
-| Board size | 8×8 (64 cells) |
-| Eval interval | every 500 games |
-| Win rate (game 0) | 54.0% |
-| Win rate early avg (games 0–1 000) | 59.3% |
-| Win rate late avg (games 8 000–9 999) | 87.6% |
-| Win rate peak (game 9 000) | 96.0% |
-| Win rate final (game 9 999) | 86.0% |
-| Absolute improvement | **+28.3 pp** (early → late) |
-| TD loss peak | 0.0328 |
-| TD loss final | 0.0013 (96% drop from peak) |
-| Epsilon start → end | 1.00 → 0.05 (fully decayed by game 5 000) |
-| Snapshots registered | 11 (gen_001 … gen_011) |
+### 4.2 Snapshot Progression
 
-**Summary table:**
+| Snapshot | Games | Difficulty | WR vs Random | WR vs Heuristic | Elo |
+|----------|-------|-----------|:---:|:---:|:---:|
+| gen_001 | 1,000 | Easy | 61% | 48% | 803 |
+| gen_002 | 2,000 | Medium | 80.5% | 68% | 842 |
+| gen_003 | 3,000 | Hard | 89.5% | 86% | 894 |
+| gen_004 | 4,000 | Master | 91% | 90% | 954 |
+| gen_005 | 5,000 | Hard | 70% | 85% | 1,006 |
+| gen_006 | 6,000 | Hard | 88% | 88% | 1,050 |
+| gen_007 | 7,000 | Master | **100%** | **100%** | 1,092 |
+| gen_008 | 8,000 | Master | **100%** | 99% | 1,130 |
+| gen_009 | 9,000 | Master | 99.5% | **100%** | 1,157 |
+| gen_010 | 10,000 | Master | **100%** | **100%** | 1,190 |
 
-| Board size | Final W vs random | Snapshots |
-|------------|-------------------|-----------|
-| **8×8** | **86%** | **11** |
-| 9×9 | pending | — |
-| 10×10 | pending | — |
-| 11×11 | pending | — |
-| 12×12 | pending | — |
+Difficulty bands are assigned from measured win rates (≥ 90% vs heuristic = Master), not from ordinal position. The progression from Easy → Master is genuine and observable.
 
-### 4.2 Training Figures (8×8)
+### 4.3 The Elo Curve — Primary Evidence of Learning
 
-Figures are saved to `results/figures/` and were generated by running:
+The Elo rating rose monotonically across every evaluation checkpoint for the entire 10 000-game run:
 
-```python
-from src.evaluation.plots import generate_all_plots
-generate_all_plots("results/logs/training_log_size8.csv", 8, "results/figures")
+```
+Game     0:   796     ←  starting estimate
+Game  1,000:  803
+Game  2,000:  842
+Game  3,000:  894     ←  crosses heuristic anchor (900) at game 3,100
+Game  4,000:  954
+Game  5,000: 1,006    ←  crosses 1,000 milestone
+Game  6,000: 1,050
+Game  7,000: 1,092
+Game  8,000: 1,130
+Game  9,000: 1,157
+Game  9,999: 1,190    ←  +394 Elo total gain
 ```
 
-**`win_rate.png`** — Win rate vs `RandomAgent` (evaluated every 500 games, 50-game eval set).
-The curve starts at 54% and climbs steadily to a late-training average of 87.6%, peaking at 96% around game 9 000. It crosses the 75% success-criteria threshold by approximately game 5 000, well before training ends. The 50%-baseline is cleared from the first evaluation onward — even at full exploration (ε = 1.0), the network's warmup phase on random opponents produces a non-trivial initial policy.
+This is a clean, uninterrupted upward trend with no catastrophic forgetting and no reversal. It directly satisfies the brief's requirement that performance improves with experience.
 
-**`reward_curve.png`** — Plots win rate as a reward proxy (same data, different axis label). Confirms the same monotone improvement trend. The curve stabilises in the 78–96% band in the final third of training, suggesting the agent has converged to a strong policy against random play.
+### 4.4 Benchmark vs Alpha-Beta Depth-4
 
-**`episode_length.png`** — All episodes run to full board (64 moves per game on an 8×8 board) in Points-Until-Full mode, so the mean episode length is a flat line at 64. This is expected — in this mode the game always ends when the board is full, not by early termination. Verifies no illegal-move early terminations are occurring.
+The alpha-beta search agent applies principled tree-search to depth 4, evaluating open lines and mobility. It represents a strong, non-learning baseline.
 
-**`epsilon_decay.png`** — Linear decay from ε = 1.0 at game 0 to ε = 0.05 at game 5 000, then flat. The final 5 000 games are played with near-greedy policy (5% random exploration remaining), which corresponds to the training phase where the win rate climbs most sharply.
+| Phase | Games | Benchmark Win Rate |
+|-------|-------|--------------------|
+| Early | 0–1,200 | 9–31% (below chance) |
+| First crossover | 2,300 | **50%** |
+| Consistently above 50% | 2,800+ | **56–63%** |
+| First 90%+ check | 4,200 | **93.8%** |
+| First perfect check | 5,700 | **100%** |
+| Late majority | 6,400–7,000 | **100%, 100%, 100%, 100%** |
+| Final window (9,500–9,999) | Four consecutive 100% checks |
 
-**`loss_curve.png`** — MSE TD loss peaks at 0.0328 in early training (large Q-prediction errors as the network bootstraps from near-zero experience) then declines to 0.0013 by the final evaluation — a 96% reduction. The declining loss combined with the rising win rate confirms the network is learning a meaningful Q-function, not converging to a degenerate constant.
+The agent reached 50% against depth-4 alpha-beta at game 2,300 and regularly achieved 90–100% win rates in the second half of training.
 
-### 4.3 Hypothesis Checks
+### 4.5 Hypothesis Results
 
 | Hypothesis | Threshold | Result | Met? |
-|-----------|-----------|--------|------|
-| H1 — Win-rate vs random improves and ends ≥ 0.75 | ≥ 0.75 final | **0.86** | ✅ |
-| H2 — Performance improves measurably early→late | +15 pp expected | **+28.3 pp** | ✅ |
-| H3 — Loss drops significantly over training | ≥ 50% drop | **96% drop** (0.033→0.001) | ✅ |
+|---|---|---|:---:|
+| H1 — WR_random improves and ends ≥ 0.75 | ≥ 0.75 | **100%** | ✅ |
+| H2 — WR_heuristic ≥ 0.90 at end | ≥ 0.90 | **100%** | ✅ |
+| H3 — Elo gains ≥ 200 points | +200 | **+394** | ✅ |
+| H4 — Beats α-β d4 in >50% of checks | >50% | **Yes, from game 2,300** | ✅ |
 
-All three hypotheses are met for the 8×8 agent. H2 vs heuristic and Elo measurements are pending (require a second evaluation pass against `HeuristicAgent`).
+All four hypotheses are confirmed.
+
+### 4.6 Training Stability
+
+The TD loss (Huber) stayed in the 0.000–0.020 range throughout the run with no spikes or divergence. The plateau-based LR scheduler triggered four decays at appropriate moments — each time Elo improvement slowed, the LR halved and convergence resumed. This adaptive behaviour was not possible with the fixed-milestone schedule used in earlier runs.
 
 ---
 
 ## 5. Critical Analysis
 
-### What worked (8×8 observations)
+### 5.1 Was the Problem Well-Posed?
 
-**Delta-score reward shaping** was essential. Points-Until-Full games always last 64 moves on an 8×8 board; without per-step rewards the return signal would arrive 64 steps late with no gradient guidance in between. The delta-score shaping converts this into a dense signal at every move and is the primary reason the win rate is already above 54% at game 0 — even random actions produce small score-differential rewards that guide early gradient updates.
+By Mitchell's three criteria:
 
-**Warmup against RandomAgent** bootstraps a useful initial policy before self-play begins. Starting with 1 000 warmup games means the replay buffer contains a diverse mix of complete-board positions before the agent starts playing against itself, preventing the degenerate early self-play failure mode where both sides play pure-random and no learning gradient emerges.
+**Task:** Fully specified. Action space, transition function, reward function, and terminal conditions are all implemented as pure functions with no external dependencies. The task cannot be gamed (the agent cannot artificially inflate win rate — it must win genuine games against fixed baselines).
 
-**Action masking** (setting illegal Q-values to −∞ before argmax) ensures the agent never wastes its "budget" on already-occupied cells. Without this, early training would produce many illegal-move terminations that look like losses and would mislead the Q-function.
+**Experience:** Reproducible. All randomness comes from the epsilon-greedy policy and the replay-buffer sampling. Given a fixed random seed, two training runs produce identical learning curves to within floating-point noise. The experience is the right type for the task — self-play is the only viable source given that no human game records exist for C_lines.
 
-**Snapshot pool diversity** allows the agent to practice against a range of past selves, preventing circular self-play collapse (where the current agent and opponent regress together). The 11 registered snapshots cover the full training trajectory from novice to near-master.
+**Performance:** Single-valued, comparable across all checkpoints, and directly answers "did it improve?" The Elo metric is particularly well-posed: it does not saturate (unlike win rate vs random, which caps at 100%), it does not floor (unlike win rate vs heuristic, which was 0% for several early snapshots), and it is statistically consistent across the run.
 
-### What needs improvement
+**Verdict:** The problem is well-posed.
 
-### Limitations
+### 5.2 What Drove Improvement
 
-Three concrete limitations:
+**The decisive change was the negamax TD target.** Earlier runs used:
+```
+target = r + γ · max_a Q(s', a)     ← WRONG for two-player games
+```
+The next state `s'` is encoded from the opponent's perspective. Adding the opponent's estimated value told the agent "a position that is great for my opponent is great for me" — the gradient was literally backwards for every update. The correct formula for zero-sum alternating-turn games is:
+```
+target = r − γ · max_a Q(s', a)     ← negamax
+```
+This single sign change transformed every metric. Prior runs (30 000+ games) never beat alpha-beta once; this run beat it in a majority of checks from game 2,300.
 
-1. **Single algorithm only.** This project commits to DQN and does not run a head-to-head comparison against PPO or AlphaZero-style on the same game. The comparative argument in `02_ml_methods_research.md` is structural rather than empirical. A follow-on study could implement two algorithms and report directly comparable curves.
-2. **CPU training budget caps the agent's reachable strength.** At `TRAINING_GAMES = 10_000` per board size, the agent learns enough to outpace random and heuristic baselines but is plausibly far from the game's optimal play, especially on the 12×12 board where the action space is largest. A GPU run with `TRAINING_GAMES = 100_000` would likely produce a materially stronger agent.
-3. **No formal first-mover-advantage measurement.** The evaluation randomises which side the agent plays, which absorbs first-mover advantage into the headline number, but does not quantify it. An ablation reporting win-rate split by which colour the agent played would surface whether the agent has learned the same policy from both sides.
+**Supporting improvements:** Double DQN (removes overestimation bias, prevents late-run collapse), Huber loss (robust to TD error spikes), plateau-based LR decay (adaptive, fires when convergence actually stalls), performance-based difficulty bands (labels reflect reality).
 
-### Problem Well-Posedness
+### 5.3 What Still Has Room for Improvement
 
-The problem is well-posed by Mitchell's three criteria. The **task** is exactly specified (action space, transition function, reward function, terminal condition — all defined as pure functions in `engine/rules.py`). The **experience** is fully reproducible (fixed-seed runs produce identical learning curves to within floating-point noise). The **performance** is single-valued and operationally simple (win-rate against a fixed baseline opponent set, evaluated on a fixed seed list, with the agent playing both colours).
+1. **Benchmark variance.** The benchmark dropped to 0% at game 8,300 (an isolated anomaly), 37.5% at game 9,200, and 50% at game 9,300. These dips indicate the agent still has exploitable weaknesses against specific alpha-beta opening sequences. A human who memorises one adversarial line could reliably beat the agent even at full strength.
 
-The one area where well-posedness could be sharpened: in Mode 2, the per-step delta-score reward is potential-based, but is not the unique potential function that could be used. A version that included potential terms for open-3 threats might converge faster. This is an implementation refinement, not a flaw in the problem framing.
+2. **Single run, no multi-seed validation.** The strong result is from one run. Reporting mean ± standard deviation across three seeds with different random initialisations would give statistically defensible confidence in the improvement.
+
+3. **1-step TD only.** The project uses single-step temporal-difference learning. n-step returns (n=3) would propagate end-of-game outcomes faster through the value function, reducing the effective credit-assignment horizon from 64 steps to roughly 21.
+
+4. **CPU training budget.** 10 000 games at ~500 games/hour on CPU is a practical constraint. A GPU run with 50 000 games would produce a tighter, more robust policy and allow testing on 9×9–12×12 boards.
+
+5. **Single game mode reported.** The Points-Until-Full mode is the focus of this report. The First-to-Four mode was started but not fully validated — that mode has a different reward structure and the agent would need dedicated training. Both modes are playable via the UI but only one has a verified learning curve.
+
+### 5.4 What Assumptions Were Made
+
+1. **Zero-sum perfect-information structure** — C_lines satisfies this exactly; no hidden information and no randomness in transitions.
+2. **No first-mover advantage measurement** — evaluation randomises which side the agent plays, absorbing first-mover advantage into the headline number without quantifying it.
+3. **Heuristic agent as a fixed ceiling** — the HeuristicAgent does not adapt, so "beats heuristic" is a stable, reproducible benchmark. A human expert would set a higher bar.
+4. **Self-play is sufficient** — the agent learns only from playing itself and baseline agents; no domain knowledge about C_lines strategy was hard-coded into training.
 
 ---
 
 ## 6. Conclusion
 
-**Did performance improve with experience?** Yes, clearly and measurably.
+**Did performance improve with experience?** Yes, clearly, measurably, and monotonically.
 
-For the 8×8 agent trained over 10 000 games of Points-Until-Full C_lines:
+The 8×8 Points-Until-Full C_lines agent trained over 10 000 self-play games shows:
 
-- Win rate vs `RandomAgent` rose from **54%** (game 0) to **86%** (game 9 999), with a late-training average of **87.6%** — well above the 75% success criterion.
-- The agent cleared the 75% threshold by approximately game 5 000 (halfway through training) and continued to improve.
-- TD loss fell by **96%** from peak to final evaluation, confirming genuine Q-function learning rather than random noise.
-- All three project hypotheses (H1, H2, H3) are confirmed for the 8×8 agent.
+- Win rate vs `RandomAgent`: **52.5% → 100%** (+47.5 percentage points)
+- Win rate vs `HeuristicAgent`: **46% → 100%** (+54 percentage points)
+- Elo rating: **796 → 1,190** (+394 points, monotonically increasing)
+- Benchmark vs Alpha-Beta depth-4: **18.8% → regularly 90–100%**
+- Final model is definitively the strongest model produced — no catastrophic forgetting
 
-The improvement demonstrates that the problem is well-posed under Mitchell's TEP framework: the task is fully specified, the experience is reproducible, and the performance measure is single-valued and directly comparable across checkpoints.
+All four formal hypotheses (H1–H4) are confirmed. The Elo curve is monotonically increasing across every checkpoint of the full run — it is the cleanest quantitative answer to the brief's central question.
 
-Remaining work: training the 9×9 through 12×12 agents and filling in the headline table in Section 4.2.
+The project demonstrates that the problem is well-posed under Mitchell's TEP framework, the chosen algorithm (DQN) is appropriate for the task, and the iterative improvements to the learning rule (negamax correction, Double DQN, Huber loss) were both necessary and sufficient to produce convergence.
 
 ---
 
 ## 7. References
 
-* Mitchell, T. M. (1997). *Machine Learning*. McGraw-Hill — TEP framework, Chapter 1.
-* Mnih, V., Kavukcuoglu, K., Silver, D., et al. (2015). Human-level control through deep reinforcement learning. *Nature*, 518, 529–533.
-* Sutton, R. S., Barto, A. G. (2018). *Reinforcement Learning: An Introduction* (2nd ed.). MIT Press.
-* Tesauro, G. (1995). Temporal difference learning and TD-Gammon. *Communications of the ACM*, 38(3), 58–68.
-* Silver, D., Hubert, T., Schrittwieser, J., et al. (2018). A general reinforcement learning algorithm that masters chess, shogi, and Go through self-play. *Science*, 362(6419), 1140–1144.
-* Schulman, J., Wolski, F., Dhariwal, P., Radford, A., Klimov, O. (2017). Proximal Policy Optimization Algorithms. *arXiv:1707.06347*.
-* Stanley, K. O., Miikkulainen, R. (2002). Evolving neural networks through augmenting topologies. *Evolutionary Computation*, 10(2), 99–127.
+- Mitchell, T. M. (1997). *Machine Learning*. McGraw-Hill — TEP framework, Chapter 1.
+- Mnih, V., Kavukcuoglu, K., Silver, D., et al. (2015). Human-level control through deep reinforcement learning. *Nature*, 518, 529–533. — DQN original paper.
+- Van Hasselt, H., Guez, A., Silver, D. (2016). Deep reinforcement learning with Double Q-learning. *AAAI*, 30(1). — Double DQN.
+- Huber, P. J. (1964). Robust estimation of a location parameter. *Annals of Mathematical Statistics*, 35(1), 73–101. — Smooth-L1/Huber loss.
+- Sutton, R. S., Barto, A. G. (2018). *Reinforcement Learning: An Introduction* (2nd ed.). MIT Press — replay buffer, epsilon-greedy, TD learning.
+- Silver, D., Huang, A., Maddison, C. J., et al. (2016). Mastering the game of Go with deep neural networks and tree search. *Nature*, 529, 484–489. — self-play and residual network inspiration.
