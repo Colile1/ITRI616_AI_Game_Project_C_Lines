@@ -61,3 +61,6 @@ log.md
 
 # NumPy checkpoint files
 *.npz
+
+deliverables/
+docs/
