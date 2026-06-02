@@ -17,6 +17,21 @@ from src.config import (
 _NEG_INF = -1e9
 
 
+def _best_device() -> torch.device:
+    """Return the fastest available device: DirectML (Intel/AMD) > CUDA > CPU."""
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    try:
+        import torch_directml
+        dml = torch_directml.device()
+        # Quick smoke-test — DirectML can be present but non-functional
+        torch.zeros(1).to(dml) + torch.zeros(1).to(dml)
+        return dml
+    except Exception:
+        pass
+    return torch.device("cpu")
+
+
 class DQNAgent(BaseAgent):
     """Online + target DQN. Call update() each gradient step."""
 
@@ -31,7 +46,7 @@ class DQNAgent(BaseAgent):
         self.in_channels = in_channels
         self.network_arch = network_arch
         self.epsilon = EPS_START
-        self._device = torch.device("cpu")
+        self._device = _best_device()
 
         self._online = build_network(board_size, in_channels, network_arch).to(self._device)
         if not eval_only:
@@ -117,6 +132,9 @@ class DQNAgent(BaseAgent):
         return self._online.state_dict()
 
     def load_state_dict(self, sd: dict) -> None:
+        # sd may come from torch.load(map_location="cpu") — move to our device
+        sd = {k: v.to(self._device) if isinstance(v, torch.Tensor) else v
+              for k, v in sd.items()}
         self._online.load_state_dict(sd)
         if self._target is not None:
             self._target.load_state_dict(sd)

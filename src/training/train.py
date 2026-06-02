@@ -40,6 +40,10 @@ from pathlib import Path
 import numpy as np
 import torch
 
+# Use all available CPU threads for intra-op parallelism
+torch.set_num_threads(torch.get_num_threads())
+torch.set_num_interop_threads(max(1, torch.get_num_interop_threads()))
+
 import src.config as _cfg
 from src.agents.base_agent import BaseAgent
 from src.agents.dqn_agent import DQNAgent
