@@ -28,8 +28,13 @@ def apply_symmetry_grid(grid: np.ndarray, k: int) -> np.ndarray:
 
 
 def transform_obs(obs: np.ndarray, k: int) -> np.ndarray:
-    """Apply symmetry k to every channel of a (C, n, n) observation."""
-    return np.stack([apply_symmetry_grid(obs[c], k) for c in range(obs.shape[0])], axis=0)
+    """Apply symmetry k to a (C, n, n) observation — vectorised over all channels at once."""
+    if k >= 4:
+        obs = obs[:, :, ::-1]   # mirror left-right across last axis (all channels)
+        k -= 4
+    if k == 0:
+        return np.ascontiguousarray(obs)
+    return np.ascontiguousarray(np.rot90(obs, k=k, axes=(1, 2)))
 
 
 def transform_action_index(idx: int, n: int, k: int) -> int:

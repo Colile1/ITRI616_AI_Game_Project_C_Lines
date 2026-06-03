@@ -14,21 +14,19 @@ from src.config import (
     STATE_CHANNELS_V2, NETWORK_ARCH,
 )
 
-_NEG_INF = -1e9
+_NEG_INF = torch.finfo(torch.float32).min / 2   # float32-safe large negative
 
 
 def _best_device() -> torch.device:
-    """Return the fastest available device: DirectML (Intel/AMD) > CUDA > CPU."""
+    """Return the fastest available device.
+
+    DirectML (Intel UHD integrated) is excluded: Adam's lerp op falls back to
+    CPU on the DML backend, causing 100× overhead from repeated shared-memory
+    transfers.  Only use DirectML if a discrete NVIDIA/AMD GPU is present.
+    CUDA (discrete NVIDIA) is supported and fast.
+    """
     if torch.cuda.is_available():
         return torch.device("cuda")
-    try:
-        import torch_directml
-        dml = torch_directml.device()
-        # Quick smoke-test — DirectML can be present but non-functional
-        torch.zeros(1).to(dml) + torch.zeros(1).to(dml)
-        return dml
-    except Exception:
-        pass
     return torch.device("cpu")
 
 
@@ -82,15 +80,19 @@ class DQNAgent(BaseAgent):
 
     def update(self, batch: dict[str, np.ndarray]) -> float:
         assert self._target is not None, "Cannot update an eval_only agent"
-        states      = torch.from_numpy(batch["states"]).to(self._device)
+        # Cast all tensors to float32 explicitly — DirectML does not support float64
+        states      = torch.from_numpy(batch["states"]).float().to(self._device)
         actions     = torch.from_numpy(batch["actions"]).long().to(self._device)
-        rewards     = torch.from_numpy(batch["rewards"]).to(self._device)
-        next_states = torch.from_numpy(batch["next_states"]).to(self._device)
-        dones       = torch.from_numpy(batch["dones"]).to(self._device)
+        rewards     = torch.from_numpy(batch["rewards"]).float().to(self._device)
+        next_states = torch.from_numpy(batch["next_states"]).float().to(self._device)
+        dones       = torch.from_numpy(batch["dones"]).float().to(self._device)
         legal_next  = torch.from_numpy(batch["legal_masks_next"]).to(self._device)
         # Per-transition bootstrap discount: GAMMA^n for n-step returns, GAMMA for 1-step.
-        gammas = torch.from_numpy(batch["gammas"]).to(self._device) if "gammas" in batch else \
-                 torch.full((rewards.shape[0],), GAMMA, dtype=torch.float32, device=self._device)
+        if "gammas" in batch:
+            gammas = torch.from_numpy(batch["gammas"]).float().to(self._device)
+        else:
+            gammas = torch.full((rewards.shape[0],), GAMMA, dtype=torch.float32,
+                                device=self._device)
 
         with torch.no_grad():
             # Double DQN: online net selects the action, target net evaluates it.
@@ -104,7 +106,8 @@ class DQNAgent(BaseAgent):
             q_next_target = self._target(next_states)
             next_q = q_next_target.gather(1, next_actions).squeeze(1)
 
-            targets = rewards - gammas * next_q * (1.0 - dones)
+            # Use integer 1 (not 1.0) — float literals are float64 on DirectML
+            targets = rewards - gammas * next_q * (1 - dones)
 
         q_pred = self._online(states)
         q_pred_actions = q_pred.gather(1, actions.unsqueeze(1)).squeeze(1)

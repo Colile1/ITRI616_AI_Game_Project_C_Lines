@@ -81,6 +81,79 @@ from src.versioning.registry import next_run_id
 
 
 # ---------------------------------------------------------------------------
+# Parallel episode collection worker (module-level — required for Windows
+# multiprocessing 'spawn' start method; cannot be a lambda or closure)
+# ---------------------------------------------------------------------------
+
+def _episode_worker(args: tuple) -> tuple:
+    """Collect one episode in a worker process.
+
+    Each worker has its own Python interpreter so game simulation runs
+    in parallel without GIL contention.  Returns serialisable data only
+    (lists of dicts, not Transition dataclasses).
+    """
+    import io, torch, numpy as np
+    from src.agents.dqn_agent import DQNAgent
+    from src.agents.random_agent import RandomAgent
+    from src.agents.heuristic_agent import HeuristicAgent
+    from src.game.env import GameEnv
+    from src.training.self_play import play_episode
+    from src.config import STATE_CHANNELS_V2, NETWORK_ARCH, WARMUP_GAMES
+
+    (agent_bytes, board_size, mode, epsilon,
+     opp_bytes, opp_type, game_idx, in_channels, network_arch) = args
+
+    # Reconstruct training agent
+    agent = DQNAgent(board_size, eval_only=True,
+                     in_channels=in_channels, network_arch=network_arch)
+    sd = torch.load(io.BytesIO(agent_bytes), map_location="cpu", weights_only=True)
+    agent.load_state_dict(sd)
+    agent.set_epsilon(float(epsilon))
+
+    # Opponent
+    if opp_type == "prev_best" and opp_bytes is not None:
+        opp = DQNAgent(board_size, eval_only=True,
+                       in_channels=in_channels, network_arch=network_arch)
+        opp_sd = torch.load(io.BytesIO(opp_bytes), map_location="cpu", weights_only=True)
+        opp.load_state_dict(opp_sd)
+        opp.set_epsilon(0.0)
+    elif opp_type == "heuristic":
+        opp = HeuristicAgent()
+    else:
+        opp = RandomAgent()
+
+    env = GameEnv(board_size, mode)
+    flip = (game_idx % 2 == 1)   # alternate sides each game
+    if not flip:
+        t1, t2, winner = play_episode(agent, opp, env)
+        learner_t = t1
+        agent_player = 1
+    else:
+        t1, t2, winner = play_episode(opp, agent, env)
+        learner_t = t2
+        agent_player = 2
+
+    # Serialise Transition objects → plain dicts (numpy arrays pickle fine)
+    def _ser(trans):
+        return {
+            "state":          trans.state,
+            "action":         int(trans.action),
+            "reward":         float(trans.reward),
+            "next_state":     trans.next_state,
+            "done":           bool(trans.done),
+            "legal_mask_next": trans.legal_mask_next,
+            "gamma_n":        float(trans.gamma_n),
+        }
+
+    return (
+        [_ser(t) for t in learner_t],
+        winner,
+        agent_player,
+        len(t1) + len(t2),   # episode length
+    )
+
+
+# ---------------------------------------------------------------------------
 # Run-folder helpers
 # ---------------------------------------------------------------------------
 
@@ -369,6 +442,7 @@ def train(
     load_weights: str | None = None,    # path to weights.pt to seed the training agent
     start_game: int | None = None,      # override the starting game counter
     prev_best_weights: str | None = None,  # path to frozen opponent replacing RandomAgent
+    n_workers: int = 1,                 # parallel episode-collection workers (>1 uses multiprocessing)
 ) -> None:
     """Auto-train with all improvements active.
 
@@ -415,6 +489,20 @@ def train(
 
     # Effective random/base opponent — use frozen prev_best if provided, else RandomAgent
     random_opp: BaseAgent = static_opp if static_opp is not None else RandomAgent()
+
+    # Parallel worker pool — bypass GIL for game simulation
+    _pool = None
+    _opp_bytes_cache: bytes | None = None
+    if n_workers > 1:
+        import io as _io
+        import multiprocessing as _mp
+        _mp.set_start_method("spawn", force=True)
+        _pool = _mp.Pool(processes=n_workers)
+        if prev_best_weights:
+            _buf = _io.BytesIO()
+            torch.save(static_opp.state_dict(), _buf)
+            _opp_bytes_cache = _buf.getvalue()
+        print(f"  [workers] Parallel episode collection with {n_workers} workers")
 
     # Benchmark
     bm_logger: BenchmarkLogger | None = None
@@ -541,19 +629,65 @@ def train(
         if is_human_mode and hasattr(opponent, "set_board"):
             opponent.set_board(env.board.grid.copy())
 
-        # ---- Play episode ----
-        if game_idx % 2 == 0:
-            t1, t2, ep_winner = play_episode(agent, opponent, env)
-            learner_transitions = t1
-            agent_player        = 1   # DQN was P1
-            human_player        = 2   # human was opponent (P2)
-            human_transitions   = t2
+        # ---- Play episode (sequential or parallel) ----
+        if _pool is not None and not is_human_mode:
+            # Parallel path: dispatch n_workers episodes simultaneously
+            import io as _io
+            _abuf = _io.BytesIO()
+            torch.save(agent.state_dict(), _abuf)
+            _agent_bytes = _abuf.getvalue()
+
+            # Determine opponent type for workers
+            _opp_type = "prev_best" if prev_best_weights else "random"
+            if game_idx < WARMUP_GAMES:
+                _opp_type = "heuristic" if np.random.random() < WARMUP_HEURISTIC_PROB else _opp_type
+
+            _worker_args = [
+                (_agent_bytes, board_size, mode, epsilon,
+                 _opp_bytes_cache, _opp_type,
+                 game_idx + _wi,
+                 STATE_CHANNELS_V2, NETWORK_ARCH)
+                for _wi in range(n_workers)
+            ]
+            _par_results = _pool.map(_episode_worker, _worker_args)
+
+            # Process first result as the "main" episode for this game_idx
+            _par_transitions_raw, ep_winner, agent_player, ep_len = _par_results[0]
+            from src.training.self_play import Transition as _Tr
+            learner_transitions = [
+                _Tr(r["state"], r["action"], r["reward"],
+                    r["next_state"], r["done"], r["legal_mask_next"], r["gamma_n"])
+                for r in _par_transitions_raw
+            ]
+            human_player = 3 - agent_player  # unused in auto mode
+
+            # Push extra parallel episodes directly to buffer (bonus data)
+            for _par_t_raw, _par_winner, _par_ap, _par_ep in _par_results[1:]:
+                _par_ts = [
+                    _Tr(r["state"], r["action"], r["reward"],
+                        r["next_state"], r["done"], r["legal_mask_next"], r["gamma_n"])
+                    for r in _par_t_raw
+                ]
+                for _t in _par_ts:
+                    buffer.push(_t.state, _t.action, _t.reward,
+                                _t.next_state, _t.done, _t.legal_mask_next,
+                                weight=source_weight, gamma_n=_t.gamma_n)
+
+            t1, t2, human_transitions = [], [], []   # not used in auto parallel mode
         else:
-            t1, t2, ep_winner = play_episode(opponent, agent, env)
-            learner_transitions = t2
-            agent_player        = 2   # DQN was P2
-            human_player        = 1   # human was opponent (P1)
-            human_transitions   = t1
+            # Sequential path (default, also used for human mode)
+            if game_idx % 2 == 0:
+                t1, t2, ep_winner = play_episode(agent, opponent, env)
+                learner_transitions = t1
+                agent_player        = 1
+                human_player        = 2
+                human_transitions   = t2
+            else:
+                t1, t2, ep_winner = play_episode(opponent, agent, env)
+                learner_transitions = t2
+                agent_player        = 2
+                human_player        = 1
+                human_transitions   = t1
 
         # ---- Notify UI of game result ----
         if is_human_mode and hasattr(opponent, "notify_game_end"):
@@ -786,6 +920,9 @@ def train(
     game_logger.close()
     if bm_logger:
         bm_logger.close()
+    if _pool is not None:
+        _pool.close()
+        _pool.join()
 
     final_stats = _evaluate(agent, board_size, mode)
     # R1: compute Elo before the final freeze so gen_N has a valid elo_rating
@@ -1101,6 +1238,9 @@ def _parse_args() -> argparse.Namespace:
                    help="Override the starting game counter (e.g. 10000 to continue from game 10001)")
     p.add_argument("--prev-best",      type=str, default=None,
                    help="Path to a frozen weights.pt used as the static base opponent instead of RandomAgent")
+    p.add_argument("--workers",        type=int, default=1,
+                   help="Number of parallel episode-collection workers (default 1). "
+                        "Set to 4-6 to use idle CPU cores for game simulation.")
     return p.parse_args()
 
 
@@ -1144,6 +1284,7 @@ def main() -> None:
             load_weights=args.load_weights,
             start_game=args.start_game,
             prev_best_weights=args.prev_best,
+            n_workers=args.workers,
         )
 
 
