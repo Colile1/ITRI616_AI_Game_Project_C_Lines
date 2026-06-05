@@ -9,7 +9,7 @@ from src.ui.theme import (
     P1_ACCENT, P1_GLOW, P2_ACCENT, P2_GLOW,
     font, make_frost_surface, draw_button, draw_card, draw_toggle,
 )
-from src.config import BOARD_SIZES, MODE_FIRST_TO_FOUR, MODE_POINTS_FULL
+from src.config import UI_BOARD_SIZES as BOARD_SIZES, MODE_FIRST_TO_FOUR, MODE_POINTS_FULL
 
 # Fixed palette for decorative background pieces
 _DECO_COLORS = [P1_ACCENT, P2_ACCENT, P1_GLOW, P2_GLOW, (140, 200, 180), (200, 160, 240)]

@@ -1,9 +1,9 @@
 # ITRI 616 Mini-Project Report — C_lines AI Learning Agent
 
 **Student:** Colile Sibanda
-**Student Number:** [Your student number]
+**Student Number:** 56543115
 **Module:** ITRI 616 — Artificial Intelligence 1
-**Game:** C_lines (original Southern-African-inspired variant)
+**Game:** C_lines
 **Algorithm:** Deep Q-Network (DQN) with self-play, snapshot pool, and delta-score reward shaping
 **Training run reported:** `run_pts_002` — 8×8 board, Points-Until-Full mode, 10 000 games
 
