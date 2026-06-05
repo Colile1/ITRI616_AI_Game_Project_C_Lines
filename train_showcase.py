@@ -55,12 +55,10 @@ if __name__ == "__main__":
     import multiprocessing
     multiprocessing.set_start_method("spawn", force=True)
 
-    N_WORKERS = 4   # adjust down to 2 if running another session simultaneously
-
     print("=" * 60)
     print("ITRI 616 Showcase Training Run")
     print("Mode: First-to-Four | Board: 8x8 | Games: 10,000")
-    print(f"Workers: {N_WORKERS} | Eval every: 50 games | BM every: 50 games")
+    print("Eval every: 50 games | Benchmark every: 50 games")
     print("=" * 60)
 
     train(
@@ -72,7 +70,7 @@ if __name__ == "__main__":
         use_augmentation=True,
         resume=False,
         start_human=False,
-        n_workers=N_WORKERS,
+        n_workers=1,
     )
 
     print()
