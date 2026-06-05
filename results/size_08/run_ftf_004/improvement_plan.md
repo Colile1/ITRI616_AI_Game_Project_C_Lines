@@ -16,7 +16,7 @@
 
 ---
 
-## F1 — Replace Elo with Episode Length as the Primary FTF Metric (Critical)
+## F1 — Replace Elo with Episode Length as the Primary FTF Metric
 
 **Problem:** The Elo tracker pits the agent against two anchors — Random (800) and Heuristic (900). In FTF mode, near-100% wins against Random cancel with near-90% losses against Heuristic, leaving Elo flat at ~790 for the entire run. This makes Elo useless as a skill signal and causes the plateau-based LR scheduler to decay LR to minimum by game 4,200.
 
