@@ -1,4 +1,4 @@
-# Improvement Plan — Lessons from `run_ftf_003`
+# Improvement Plan: Lessons from `run_ftf_003`
 
 **Written:** 2026-06-02
 **Based on:** `results/size_08/run_ftf_003/analysis_report.md`
