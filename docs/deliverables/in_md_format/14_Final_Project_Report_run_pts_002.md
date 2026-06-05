@@ -2,7 +2,7 @@
 
 ### ITRI 616 Mini-Project — Final Report
 
-**Author:** Colile Sibanda
+**Author:** *----* *S----*
 **Institution:** North-West University
 **Module:** ITRI 616 — Artificial Intelligence 1
 **Date:** 2026-06-01

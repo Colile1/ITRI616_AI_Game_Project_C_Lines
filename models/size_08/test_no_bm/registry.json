@@ -2,7 +2,7 @@
   {
     "version_id": "gen_001",
     "run_id": "test_no_bm",
-    "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\test_no_bm\\gen_001\\weights.pt",
+    "weights_path": "C:\\Users\\*----*\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\test_no_bm\\gen_001\\weights.pt",
     "friendly_name": "Apprentice",
     "difficulty_band": "novice",
     "games_trained": 5,

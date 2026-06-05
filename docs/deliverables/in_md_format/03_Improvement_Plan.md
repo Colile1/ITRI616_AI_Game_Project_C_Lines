@@ -2,5 +2,5 @@
 ITRI 616 Mini-Project —
 
 
-Author: Colile Sibanda
+Author: *----* *S----*
 Document purpose: 

@@ -1,6 +1,6 @@
 # C_lines — Code Documentation
 
-**Author:** Colile Sibanda · ITRI 616
+**Author:** *----* *S----* · ITRI 616
 **Date:** 2026-06-02
 **Companion to:** `17_Project_Report_FINAL.md`
 **Scope:** how to install and run the code, how to reproduce the experiments, and a map of which code does what (game, learning algorithm, data collection, analysis). All examples use the reported configuration: **8×8 board, points-until-full**.

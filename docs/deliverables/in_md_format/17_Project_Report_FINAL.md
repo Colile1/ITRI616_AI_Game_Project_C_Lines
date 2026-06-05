@@ -2,7 +2,7 @@
 
 ### A Self-Play Reinforcement-Learning Agent for an Original Line-Scoring Board Game
 
-**Author:** Colile Sibanda · North-West University · ITRI 616 — Artificial Intelligence 1
+**Author:** *----* *S----* · North-West University · ITRI 616 — Artificial Intelligence 1
 **Date:** 2026-06-02
 **Configuration:** C_lines, 8×8 board, points-until-full mode
 **Training run reported:** `run_pts_002` — 10,000 self-play games

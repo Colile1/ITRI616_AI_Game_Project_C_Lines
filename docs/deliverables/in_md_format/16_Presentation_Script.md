@@ -1,6 +1,6 @@
 # Presentation Script — C_lines Self-Play RL Agent
 
-**Author:** Colile Sibanda · ITRI 616
+**Author:** *----* *S----* · ITRI 616
 **Date:** 2026-06-01
 **Run presented:** `run_pts_002` — 8×8, points-until-full, 10,000 self-play games
 **Length:** ~10 minutes spoken + live demo (Steps from `15_Live_Demonstration_Plan.md`) + Q&A

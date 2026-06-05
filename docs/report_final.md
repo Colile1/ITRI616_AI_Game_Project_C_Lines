@@ -1,7 +1,7 @@
 # C_lines: Designing and Training a Self-Play Reinforcement Learning Agent
 ## ITRI 616 Mini-Project Technical Report
 
-**Student:** Colile Sibanda | **Module:** ITRI 616 — Artificial Intelligence 1
+**Student:** *----* *S----* | **Module:** ITRI 616 — Artificial Intelligence 1
 **Code repository:** [Submit GitHub link here]
 
 ---

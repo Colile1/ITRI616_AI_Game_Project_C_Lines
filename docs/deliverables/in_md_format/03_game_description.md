@@ -1,6 +1,6 @@
 # C_lines — Game Description and Rules
 
-**Author:** Colile Sibanda
+**Author:** *----* *S----*
 **Module:** ITRI 616
 **Date:** 2026-05-28
 **Status:** Ruleset locked; improvement suggestions advisory

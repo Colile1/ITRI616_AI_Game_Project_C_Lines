@@ -1,6 +1,6 @@
 # Unified Upgrade Plan — Combining Algorithm Upgrade with Human-in-the-Loop Training
 
-**Author:** Colile Sibanda
+**Author:** *----* *S----*
 **Module:** ITRI 616
 **Date:** 2026-05-28
 **Status:** Plan locked; this is the binding execution plan for the upgrade work

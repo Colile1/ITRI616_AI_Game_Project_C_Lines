@@ -14,7 +14,7 @@
     },
     {
       "version_id": "gen_002",
-      "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_002\\weights.pt",
+      "weights_path": "C:\\Users\\*----*\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_002\\weights.pt",
       "friendly_name": "Beginner",
       "difficulty_band": "novice",
       "games_trained": 1000,
@@ -26,7 +26,7 @@
     },
     {
       "version_id": "gen_003",
-      "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_003\\weights.pt",
+      "weights_path": "C:\\Users\\*----*\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_003\\weights.pt",
       "friendly_name": "Apprentice",
       "difficulty_band": "novice",
       "games_trained": 2000,
@@ -38,7 +38,7 @@
     },
     {
       "version_id": "gen_004",
-      "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_004\\weights.pt",
+      "weights_path": "C:\\Users\\*----*\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_004\\weights.pt",
       "friendly_name": "Cadet",
       "difficulty_band": "easy",
       "games_trained": 3000,
@@ -50,7 +50,7 @@
     },
     {
       "version_id": "gen_005",
-      "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_005\\weights.pt",
+      "weights_path": "C:\\Users\\*----*\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_005\\weights.pt",
       "friendly_name": "Improver",
       "difficulty_band": "easy",
       "games_trained": 4000,
@@ -62,7 +62,7 @@
     },
     {
       "version_id": "gen_006",
-      "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_006\\weights.pt",
+      "weights_path": "C:\\Users\\*----*\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_006\\weights.pt",
       "friendly_name": "Adept",
       "difficulty_band": "medium",
       "games_trained": 5000,
@@ -74,7 +74,7 @@
     },
     {
       "version_id": "gen_007",
-      "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_007\\weights.pt",
+      "weights_path": "C:\\Users\\*----*\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_007\\weights.pt",
       "friendly_name": "Tactician",
       "difficulty_band": "medium",
       "games_trained": 6000,
@@ -86,7 +86,7 @@
     },
     {
       "version_id": "gen_008",
-      "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_008\\weights.pt",
+      "weights_path": "C:\\Users\\*----*\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_008\\weights.pt",
       "friendly_name": "Adept",
       "difficulty_band": "medium",
       "games_trained": 7000,
@@ -98,7 +98,7 @@
     },
     {
       "version_id": "gen_009",
-      "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_009\\weights.pt",
+      "weights_path": "C:\\Users\\*----*\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_009\\weights.pt",
       "friendly_name": "Strategist",
       "difficulty_band": "hard",
       "games_trained": 8000,
@@ -110,7 +110,7 @@
     },
     {
       "version_id": "gen_010",
-      "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_010\\weights.pt",
+      "weights_path": "C:\\Users\\*----*\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_010\\weights.pt",
       "friendly_name": "Veteran",
       "difficulty_band": "hard",
       "games_trained": 9000,
@@ -122,7 +122,7 @@
     },
     {
       "version_id": "gen_011",
-      "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_011\\weights.pt",
+      "weights_path": "C:\\Users\\*----*\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\gen_011\\weights.pt",
       "friendly_name": "Master",
       "difficulty_band": "master",
       "games_trained": 10000,

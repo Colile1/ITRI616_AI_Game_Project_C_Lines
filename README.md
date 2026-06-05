@@ -1,6 +1,6 @@
 # C_lines — ITRI 616 Mini-Project
 
-**Author:** Colile Sibanda · North-West University · 2026
+**Author:**  · North-West University · 2026
 
 C_lines is a two-player strategy board game on a flat 8×8 grid where players freely place pieces and the first to form four in a row wins (*First-to-Four* mode). A Deep Q-Network (DQN) agent learns to play through self-play and is snapshotted at regular intervals — each snapshot becomes a selectable difficulty level in the UI.
 

@@ -2,7 +2,7 @@
 
 **Module:** ITRI 616 — Artificial Intelligence 1
 **Institution:** North-West University (NWU)
-**Student / Author:** Colile Sibanda
+**Student / Author:** *----* *S----*
 **Date:** 2026-05-28
 **Project type:** Semester mini-project — well-posed learning problem for an intelligent game agent
 **Status:** Planning complete, build pending
@@ -44,10 +44,10 @@ Beating a state-of-the-art Connect-Four solver, replicating AlphaZero's level of
 
 | Stakeholder | Role | Interest |
 |-------------|------|----------|
-| Colile Sibanda | Student, sole developer | Pass the module with a strong mark and a maintainable code base reusable for future ITRI projects |
+| *----* *S----* | Student, sole developer | Pass the module with a strong mark and a maintainable code base reusable for future ITRI projects |
 | ITRI 616 module lecturer | Examiner | TEP rigour, learning-curve evidence, code quality, critical analysis |
 | External markers (if any) | Examiner | Same as lecturer |
-| Future Colile (post-submission) | Re-user | Reuse the game-design skeleton and snapshot system for a follow-on ITRI 626 or M.Sc. project |
+| Future *----* (post-submission) | Re-user | Reuse the game-design skeleton and snapshot system for a follow-on ITRI 626 or M.Sc. project |
 
 ## 6. Success criteria
 

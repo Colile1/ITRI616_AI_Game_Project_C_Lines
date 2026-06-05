@@ -1,6 +1,6 @@
 # Game Design Skeleton — AI Board Game (ITRI616 Template)
 
-**Author:** Colile Sibanda  
+**Author:** *----* *S----*  
 **Purpose:** Reusable prompt attachment for building new AI board games in the Masimo stack.  
 **How to use:** Attach this file to a new conversation, then describe only what is *different*
 about the new game (rules, board, actions). Everything else — architecture, conventions,

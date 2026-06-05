@@ -48,7 +48,7 @@ The ITRI 616 brief grades on TEP rigour, learning-curve evidence, and critical a
 
 **Issues encountered:**
 - The original "must not be a game that already exists" constraint forced a careful comparison against Connect Four, Gomoku, Renju, and Five-in-a-Row — settled on a combination of (a) open placement on a square grid + (b) variable-length scoring + (c) custom no-draw tie-break as the originality claim.
-- Game name was clarified mid-session — `C_lines` chosen by Colile.
+- Game name was clarified mid-session — `C_lines` chosen by *----*.
 - Tie-break mechanic was clarified to be three rounds of mutual piece removal, falling back to a draw — implemented as a dedicated sub-game in `engine/rules.py`.
 
 **Impact:**
@@ -283,7 +283,7 @@ Train 9×9 agent: `python -m src.training.train --games 10000 --size 9 --mode po
 *Diagnosis:*
 Benchmarked the best 8×8 snapshot (gen_011): 88% vs random but only 78% vs HeuristicAgent. Win-rate plateaued after game 5000 (Q3 avg 90%, Q4 avg 88%, delta near zero). Late-training eval std dev 5.17%. Root causes identified: random opponent saturated, snapshot pool dominated by early weak snapshots, only 1 gradient step per game, no heuristic exposure during training.
 
-*Written improvement plan:* `C:\Users\Colile\.claude\plans\improvement-plan-training.md` — 10 targeted changes.
+*Written improvement plan:* `C:\Users\*----*\.claude\plans\improvement-plan-training.md` — 10 targeted changes.
 
 *Implemented:*
 - `src/config.py` — 10 new/changed constants: `EVAL_INTERVAL=100`, `EVAL_GAMES=100`, `BATCH_SIZE=128`, `GRADIENT_STEPS_PER_GAME=4`, `TARGET_SYNC_STEPS=500`, `SNAPSHOT_INTERVAL=500`, `WARMUP_GAMES=2000`, `WARMUP_HEURISTIC_PROB=0.3`, `RECENT_POOL_BIAS=0.7`, `RECENT_POOL_TOP_N=5`, `LR_DECAY_MILESTONES=[0.40,0.75]`, `MODEL_VERSION=2`.

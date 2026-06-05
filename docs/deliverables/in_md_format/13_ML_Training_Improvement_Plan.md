@@ -1,6 +1,6 @@
 # ML Training Approach — Improvement Plan & Implementation Guide
 
-**Project:** C_lines (ITRI 616) · Author: Colile Sibanda
+**Project:** C_lines (ITRI 616) · Author: *----* *S----*
 **Plan written:** 2026-05-31
 **Companion to:** `12_ML_Training_Analysis_Report.md`
 **Status:** Proposal. This document does not modify any source file. Every change below is described with the file to touch and a code sketch, so it can be applied deliberately.

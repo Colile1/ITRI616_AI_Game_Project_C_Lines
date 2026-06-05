@@ -1,6 +1,6 @@
 # C_lines — UI / UX Specification
 
-**Author:** Colile Sibanda
+**Author:** *----* *S----*
 **Module:** ITRI 616
 **Date:** 2026-05-28
 **Theme:** Frosted glass · sheer · light-blue

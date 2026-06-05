@@ -1,7 +1,7 @@
 # ITRI 616: Mini-Project Technical Report
 ## C_lines: A Reinforcement Learning Agent for First-to-Four
 
-**Student:** Colile Sibanda
+**Student:** *----* *S----*
 **Module:** ITRI 616 — Artificial Intelligence 1
 **Date:** June 2026
 

@@ -1,6 +1,6 @@
 # Machine Learning Methods for C_lines — Research Report
 
-**Author:** Colile Sibanda
+**Author:** *----* *S----*
 **Module:** ITRI 616
 **Date:** 2026-05-28
 **Status:** Recommendation finalised — Deep Q-Network with self-play

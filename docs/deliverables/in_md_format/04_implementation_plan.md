@@ -1,6 +1,6 @@
 # C_lines — Implementation Plan
 
-**Author:** Colile Sibanda
+**Author:** *----* *S----*
 **Module:** ITRI 616
 **Date:** 2026-05-28
 **Status:** Plan locked; execution phase pending

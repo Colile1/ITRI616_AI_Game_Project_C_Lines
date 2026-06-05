@@ -1,7 +1,7 @@
 # C_lines: A Self-Play Reinforcement Learning Agent for a Southern African Line-Formation Game
 ## ITRI 616 Mini-Project — Technical Report
 
-**Student:** Colile Sibanda | **Module:** ITRI 616 — Artificial Intelligence 1
+**Student:** *----* *S----* | **Module:** ITRI 616 — Artificial Intelligence 1
 **Game:** C_lines (original) | **Algorithm:** DQN with self-play
 **Code repository:** [GitHub link]
 

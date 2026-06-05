@@ -1,6 +1,6 @@
 # In-Person Live Demo — Preparation (Presenting Tomorrow, 2026-06-03)
 
-**Author:** Colile Sibanda · ITRI 616
+**Author:** *----* *S----* · ITRI 616
 **Configuration:** C_lines 8×8, points-until-full · run `run_pts_002`
 **Use with:** the slide deck (`C_lines_presentation.pptx`) and the video script (`20_Video_Presentation_Script.md`)
 

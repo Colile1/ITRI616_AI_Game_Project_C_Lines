@@ -1,6 +1,6 @@
 # Presentation Script — ITRI 616 Mini-Project
 
-**Student:** Colile Sibanda
+**Student:** *----* *S----*
 **Topic:** C_lines AI Learning Agent
 **Target time:** 12–15 minutes
 **Structure:** TEP → Algorithm → Results → Demo → Critical Analysis → Conclusion

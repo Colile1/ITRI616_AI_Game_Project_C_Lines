@@ -2,7 +2,7 @@ Submission Readiness Checklist
 and Risk Register — ITRI 616 Mini-Project
 
 
-Author: Colile Sibanda
+Author: *----* *S----*
 Document purpose: A pre-submission audit instrument: a checklist mapped 1-to-1 to the official rubric, plus a risk register naming the top reasons a submission of this project could lose marks unintentionally.
 Use: Walk through every checkbox the night before submission. Record each item as Done, Partial, or Not Done. Treat any "Not Done" in the rubric-aligned section as a blocker.
 
@@ -110,8 +110,8 @@ The literal sequence of commands and edits to execute the night before submissio
 13.	Re-export to PDF: libreoffice --headless --convert-to pdf docs/report.md (or pandoc).
 14.	Open the PDF and verify all figures render.
 3.5 Archive and submit
-15.	Create the submission archive: zip -r ITRI616_Sibanda_Morabaraba.zip 616_AI_Project -x "*.git/*" -x "*__pycache__/*" -x "*.pyc" -x "*.venv*".
-16.	Verify the archive: unzip -l ITRI616_Sibanda_Morabaraba.zip | head -50.
+15.	Create the submission archive: zip -r ITRI616_*S----*_Morabaraba.zip 616_AI_Project -x "*.git/*" -x "*__pycache__/*" -x "*.pyc" -x "*.venv*".
+16.	Verify the archive: unzip -l ITRI616_*S----*_Morabaraba.zip | head -50.
 17.	Confirm the archive size is reasonable (< 50 MB).
 18.	Upload to the institution's submission portal.
 19.	Take a screenshot of the submission confirmation page.

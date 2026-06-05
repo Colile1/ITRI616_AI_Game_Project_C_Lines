@@ -1,6 +1,6 @@
 # Live Demonstration Plan — C_lines (8×8, points-until-full)
 
-**Author:** Colile Sibanda · ITRI 616
+**Author:** *----* *S----* · ITRI 616
 **Date:** 2026-06-01
 **Run demonstrated:** `run_pts_002` (10,000 self-play games, 8×8, points-until-full)
 **Target duration:** 6–8 minutes of demo within the presentation slot

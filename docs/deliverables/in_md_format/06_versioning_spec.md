@@ -1,6 +1,6 @@
 # C_lines — Agent Versioning and Snapshot Specification
 
-**Author:** Colile Sibanda
+**Author:** *----* *S----*
 **Module:** ITRI 616
 **Date:** 2026-05-28
 **Status:** Schema locked; implementation pending Phase 8

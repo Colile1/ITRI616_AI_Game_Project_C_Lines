@@ -1,7 +1,7 @@
 # ML Training Approach — Current-State Analysis Report
 
 **Project:** C_lines — open-placement four-in-a-row variant with a self-play DQN agent
-**Author of project:** Colile Sibanda · NWU · ITRI 616
+**Author of project:** *----* *S----* · NWU · ITRI 616
 **Report written:** 2026-05-31
 **Scope:** This report reviews the project *as it currently stands*, with the focus on the machine-learning model and the training approach. It is a standalone document and does not modify any existing file. A companion document, `13_ML_Training_Improvement_Plan.md`, proposes and sequences the fixes.
 

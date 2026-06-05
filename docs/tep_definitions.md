@@ -2,7 +2,7 @@
 
 **Framework:** Mitchell, T. M. (1997). *Machine Learning*, Chapter 1 — "A Well-Posed Learning Problem".
 **Game:** C_lines (see `deliverables/in_md_format/03_game_description.md`)
-**Author:** Colile Sibanda — ITRI 616, 2026
+**Author:** *----* *S----* — ITRI 616, 2026
 
 ---
 

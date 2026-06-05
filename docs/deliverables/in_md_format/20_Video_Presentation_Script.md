@@ -1,6 +1,6 @@
 # Video Presentation Script — C_lines (recorded option, due Friday)
 
-**Author:** Colile Sibanda · ITRI 616
+**Author:** *----* *S----* · ITRI 616
 **Deck:** `docs/deliverables/presentation/C_lines_presentation.pptx` (11 slides)
 **Target length:** 8–10 minutes
 **Use this if** you present a recorded video on Friday instead of live tomorrow.
@@ -20,7 +20,7 @@ Read this almost verbatim; it is paced for narration. Each block is one slide. *
 
 ## Slide 1 — Title (0:00–0:30)
 
-"Hi, I'm Colile Sibanda, and this is my ITRI 616 project: C_lines — an original board game I designed, and an AI agent that learns to play it well entirely by playing against itself. Over the next few minutes I'll show you how I framed this as a learning problem, the algorithm I used, and quantitative evidence that the agent's performance improves with experience."
+"Hi, I'm *----* *S----*, and this is my ITRI 616 project: C_lines — an original board game I designed, and an AI agent that learns to play it well entirely by playing against itself. Over the next few minutes I'll show you how I framed this as a learning problem, the algorithm I used, and quantitative evidence that the agent's performance improves with experience."
 
 *(Calm, confident open. Don't read the subtitle aloud.)*
 

@@ -1,6 +1,6 @@
 # Human-in-the-Loop Training and Fixed-Benchmark Plan
 
-**Author:** Colile Sibanda
+**Author:** *----* *S----*
 **Module:** ITRI 616
 **Date:** 2026-05-28
 **Status:** Plan locked, implementation pending
@@ -92,7 +92,7 @@ The `--schedule` string is parsed left-to-right; each phase is `<source>:<n_game
 ### 4.2 Schedule from JSON file
 
 ```bash
-python -m src.training.train --schedule-file schedules/colile_evening.json --size 8
+python -m src.training.train --schedule-file schedules/*----*_evening.json --size 8
 ```
 
 Example file:
@@ -118,7 +118,7 @@ Example file:
 ### 4.3 Resume
 
 ```bash
-python -m src.training.train --resume runs/2026-05-29_colile_evening
+python -m src.training.train --resume runs/2026-05-29_*----*_evening
 ```
 
 Loads the schedule, the last-saved learner state, the partial CSV log, and continues from the next un-played game.
@@ -233,7 +233,7 @@ The default in v1 is the single-buffer importance-weighted approach; the demonst
 Each training session produces a single directory under `runs/<timestamp>_<session_name>/`:
 
 ```
-runs/2026-05-29_colile_evening/
+runs/2026-05-29_*----*_evening/
 ├── schedule.json                  # the schedule, copied verbatim
 ├── learner_initial.pt             # snapshot of the learner at session start
 ├── learner_latest.pt              # rolling latest snapshot (overwritten)
@@ -267,7 +267,7 @@ python -m src.training.train --schedule "human:10" --size 8 --resume runs/last
 ### 9.3 Interleaved evening training
 
 ```bash
-python -m src.training.train --schedule-file schedules/colile_evening.json --size 8
+python -m src.training.train --schedule-file schedules/*----*_evening.json --size 8
 ```
 
 The mixed schedule from Section 4.2.

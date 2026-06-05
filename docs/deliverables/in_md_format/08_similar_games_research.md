@@ -1,6 +1,6 @@
 # Similar-Game AI Research — How Other Open-Placement Line Games Are Solved
 
-**Author:** Colile Sibanda
+**Author:** *----* *S----*
 **Module:** ITRI 616
 **Date:** 2026-05-28
 **Status:** Research complete; informs `09_algorithm_upgrade_plan.md`

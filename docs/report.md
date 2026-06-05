@@ -1,6 +1,6 @@
 # ITRI 616 Mini-Project Report — C_lines AI Learning Agent
 
-**Student:** Colile Sibanda
+**Student:** *----* *S----*
 **Student Number:** 56543115
 **Module:** ITRI 616 — Artificial Intelligence 1
 **Game:** C_lines
