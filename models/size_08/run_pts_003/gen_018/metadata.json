@@ -1,0 +1,38 @@
+{
+  "version_id": "gen_018",
+  "board_size": 8,
+  "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\run_pts_003\\gen_018\\weights.pt",
+  "run_id": "run_pts_003",
+  "created_at": "2026-06-03T16:04:12.937720+00:00",
+  "games_trained": 15000,
+  "gradient_steps": 4000,
+  "epsilon_at_freeze": 0.050000000000000044,
+  "parent_run_id": "41c75779-1917-480b-8d31-61c2726861e1",
+  "parent_version_id": "gen_017",
+  "win_rate_vs_random": 0.435,
+  "win_rate_vs_heuristic": 0.51,
+  "win_rate_vs_self": null,
+  "elo_rating": 787.5,
+  "mean_episode_length": 64.0,
+  "training_history": [
+    {
+      "games_trained": 14000,
+      "win_rate_vs_random": 0.985,
+      "elo_rating": 813.2
+    },
+    {
+      "games_trained": 15000,
+      "win_rate_vs_random": 0.435,
+      "elo_rating": 787.5
+    }
+  ],
+  "friendly_name": "Adept",
+  "difficulty_band": "medium",
+  "notes": "",
+  "model_version": 2,
+  "state_channels": 10,
+  "network_arch": "resnet_v1",
+  "parent_schedule_path": null,
+  "human_games_seen": 0,
+  "benchmark_summary": null
+}

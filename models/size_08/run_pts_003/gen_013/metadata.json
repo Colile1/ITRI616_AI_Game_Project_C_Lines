@@ -1,0 +1,43 @@
+{
+  "version_id": "gen_013",
+  "board_size": 8,
+  "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\run_pts_003\\gen_013\\weights.pt",
+  "run_id": "run_pts_003",
+  "created_at": "2026-06-02T22:26:26.264624+00:00",
+  "games_trained": 12000,
+  "gradient_steps": 7992,
+  "epsilon_at_freeze": 0.050000000000000044,
+  "parent_run_id": "af5d3947-78e7-4a29-95f8-c70fafe3b444",
+  "parent_version_id": "gen_012",
+  "win_rate_vs_random": 0.455,
+  "win_rate_vs_heuristic": 0.41,
+  "win_rate_vs_self": null,
+  "elo_rating": 848.5,
+  "mean_episode_length": 64.0,
+  "training_history": [
+    {
+      "games_trained": 10000,
+      "win_rate_vs_random": 0.995,
+      "elo_rating": 814.0
+    },
+    {
+      "games_trained": 11000,
+      "win_rate_vs_random": 0.305,
+      "elo_rating": 821.0
+    },
+    {
+      "games_trained": 12000,
+      "win_rate_vs_random": 0.455,
+      "elo_rating": 848.5
+    }
+  ],
+  "friendly_name": "Improver",
+  "difficulty_band": "easy",
+  "notes": "",
+  "model_version": 2,
+  "state_channels": 10,
+  "network_arch": "resnet_v1",
+  "parent_schedule_path": null,
+  "human_games_seen": 0,
+  "benchmark_summary": null
+}

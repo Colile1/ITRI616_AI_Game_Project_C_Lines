@@ -631,11 +631,16 @@ def train(
 
         # ---- Play episode (sequential or parallel) ----
         if _pool is not None and not is_human_mode:
-            # Parallel path: dispatch n_workers episodes simultaneously
+            # Parallel path: dispatch n_workers episodes simultaneously.
+            # Only re-serialise weights every 50 games — pickle of 500KB on
+            # every single step was the bottleneck eating the parallelism gain.
             import io as _io
-            _abuf = _io.BytesIO()
-            torch.save(agent.state_dict(), _abuf)
-            _agent_bytes = _abuf.getvalue()
+            _SYNC_EVERY = 50
+            if not hasattr(train, '_agent_bytes_cache') or game_idx % _SYNC_EVERY == 0:
+                _abuf = _io.BytesIO()
+                torch.save(agent.state_dict(), _abuf)
+                train._agent_bytes_cache = _abuf.getvalue()
+            _agent_bytes = train._agent_bytes_cache
 
             # Determine opponent type for workers
             _opp_type = "prev_best" if prev_best_weights else "random"
