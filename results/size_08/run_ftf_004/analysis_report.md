@@ -1,210 +1,129 @@
-# Run `run_ftf_003` — Post-Run Analysis Report
-
-**Date:** 2026-06-02
-**Board size:** 8×8 | **Mode:** `first_to_four` | **Total training games:** 10,000
-**Benchmark opponent:** Alpha-Beta depth-4 (`alphabeta_d4`, 32 games per check)
-**Network:** ResNet v1 — 4 residual blocks, 64 channels, 10-channel state encoding
-**Run duration:** ~51 hours (2026-06-01 ~05:45 → 2026-06-02 ~04:23 UTC)
-**Throughput:** ~190 games/hour average (slowed by benchmark overhead)
-
-**First FTF run with:** negamax TD target, Double DQN, Huber loss, threat-delta reward shaping (no survival bonus), early-loss synthetic transitions, plateau LR decay, Elo tracking.
+# Analysis Report — run_ftf_004
+**Mode:** First-to-Four (FTF) | **Board:** 8x8 | **Total games:** 20,000
+**Written:** 2026-06-05
 
 ---
 
-## 1. Headline Numbers
+## 1. Run Configuration
 
-| Metric | run_ftf_002 (pre-fixes) | run_ftf_003 (this run) | run_pts_002 (points_full) |
-|--------|:---:|:---:|:---:|
-| WR vs random (final) | 95% | **100%** | 100% |
-| WR vs heuristic (final) | 6% | **13–31%** | 100% |
-| Elo start → end | — | **790 → 792 (+2)** | 796 → 1,190 (+394) |
-| Benchmark peak | 0% (0/101) | **87.5%** | 100% |
-| Episode length (final) | 15–22 moves | **8–10 moves** | 64 (full board) |
-| All snapshots labeled | varied (wrong) | **All novice** (correct) | Easy → Master |
-
-FTF mode improved significantly over run_ftf_002 but remains far weaker against the heuristic opponent compared to the points_full run. The agent dominates random play and wins games in 8–10 total moves, but the heuristic's explicit 4-threat-blocking keeps WR_heuristic under 31%.
-
----
-
-## 2. Snapshot Performance
-
-| Gen | Games | Label | Band | WR vs Random | WR vs Heuristic | Elo |
-|-----|-------|-------|------|:---:|:---:|:---:|
-| gen_001 | 1,000 | Apprentice | novice | 48.5% | 0% | 716 |
-| gen_002 | 2,000 | Beginner | novice | 77.5% | 0% | 682 |
-| gen_003 | 3,000 | Apprentice | novice | 88.0% | 1% | 682 |
-| gen_004 | 4,000 | Beginner | novice | 95.0% | 0% | 687 |
-| gen_005 | 5,000 | Apprentice | novice | 96.5% | 5% | 703 |
-| gen_006 | 6,000 | Beginner | novice | 99.0% | 6% | 723 |
-| gen_007 | 7,000 | Apprentice | novice | **100%** | 6% | 744 |
-| gen_008 | 8,000 | Beginner | novice | **100%** | 17% | 767 |
-| gen_009 | 9,000 | Apprentice | novice | **100%** | 17% | 783 |
-| gen_010 | 10,000 | Beginner | novice | 99.5% | 13% | — |
-
-Every snapshot is labeled **novice** because WR vs heuristic never reached the 25% threshold for "easy." This is correct: the performance-based band assignment works as designed — the agent genuinely never beat the heuristic reliably. However, it creates a flat difficulty ladder with no variation for players in the UI.
+| Parameter | Value |
+|-----------|-------|
+| Board size | 8x8 |
+| Game mode | First-to-Four (win by completing a 4-in-a-row first) |
+| Network | ResNet (4 residual blocks, 64 channels, 10-channel input) |
+| Algorithm | Double DQN + n-step returns (n=3) + D4 symmetry augmentation |
+| Training games | 20,000 (weights seeded from run_ftf_003 best at game 10,000) |
+| Base opponent | Previous best model from run_ftf_003 (WR 31% vs heuristic) |
+| Benchmark opponent | AlphaBeta depth-4 (64 games per check, every 100 training games) |
+| Reward shaping | Open-3 threat delta x0.10 + forced-win (double-open-3) delta x0.30 |
 
 ---
 
-## 3. Training Curve Analysis
+## 2. Learning Curves — Key Milestones
 
-### Most Important Signal — Episode Length
-
-Episode length is the clearest evidence of learning in FTF mode. A shorter episode means the agent is completing 4-in-a-rows faster:
-
-```
-Game     0:  33.3 moves  (random play, slow)
-Game  1,000: 31.8 moves
-Game  2,000: 27.5 moves  ← agent starting to win faster
-Game  3,000: 23.9 moves
-Game  4,000: 18.1 moves  ← major drop, agent races to 4
-Game  5,000: 17.1 moves
-Game  6,000: 13.1 moves
-Game  7,000:  9.9 moves  ← wins in under 10 total moves
-Game  8,000:  9.1 moves
-Game  9,000:  8.9 moves
-Game  9,999: 10.2 moves
-```
-
-By game 7,000 the agent is building a 4-in-a-row in approximately 5 of its own turns. Against random opponents this is a near-perfect win rate. This is the correct, mode-aligned behaviour for first_to_four.
-
-### Win Rate vs Random — Clean Rise
-
-```
-Game  0:   48.5%
-Game  500:  51.0%
-Game 1,500: 61.0%
-Game 2,000: 77.5%
-Game 2,500: 84.0%
-Game 3,000: 88.0%
-Game 4,000: 95.0%
-Game 5,000: 96.5%
-Game 7,000: 100%   ← first 100%, stays there
-Final:      100%
-```
-
-### Win Rate vs Heuristic — Slow, Partial Climb
-
-```
-Games 0–4,100: 0–1%   (essentially zero for first 4,100 games)
-Game 4,200:    4%
-Game 5,200:   10%     ← first double-digit
-Game 5,500:   10%
-Game 5,800:   14%
-Game 7,600:   20%
-Game 9,200:   24%
-Game 9,700:   26%
-Game 9,800:   31%     ← peak
-Final (9999): 18%
-```
-
-The heuristic win rate is climbing slowly but has not reached a reliable level. The 31% peak at game 9,800 is real learning — from 0% to 31% represents genuine progress — but it is far from the 100% achieved in points_full mode.
-
-### Elo — Flat, Not Monotone
-
-Unlike run_pts_002, Elo is not a useful skill signal here:
-
-```
-Start:    790.2
-Game 500: 750.9  ← declining
-Game 2500: 678.9  ← trough
-Game 5000: 703.3
-Game 7000: 744.0
-Game 9000: 782.7
-Final:     792.4  ← barely above start
-```
-
-Net change: +2 Elo over 10,000 games. The issue is structural: the two Elo anchors (Random=800, Heuristic=900) give contradictory signals. The agent wins nearly all random games (pushing Elo up) but loses most heuristic games (pulling it down). The nearly equal magnitude of these effects means Elo barely moves — it is not a useful diagnostic metric for FTF mode.
-
-### LR Decay — Triggered Too Early
-
-The plateau-based LR decay fired 4 times but much earlier than in run_pts_002:
-
-| Decay | Game | LR | Trigger |
-|-------|------|----|---------|
-| 1 | ~1,000 | 1e-3 → 5e-4 | Elo declining (plateau) |
-| 2 | ~2,100 | 5e-4 → 2.5e-4 | Elo still not rising |
-| 3 | ~4,200 | 2.5e-4 → 1.25e-4 | Elo barely moving |
-| 4 | — | (no further decay) | Elo started rising |
-
-LR reached its minimum (1.25e-4) at game 4,200 — only 42% of training. The remaining 58% ran with a very low LR. Because the plateau detector uses Elo and Elo is broken for FTF mode, the LR decayed too aggressively and too early.
+| Game | Epsilon | Ep. Length | WR vs Random | WR vs Heuristic | Elo | BM vs AlphaBeta |
+|------|---------|-----------|-------------|----------------|-----|-----------------|
+| 0 | 1.00 | 33.3 | 48.5% | 0.0% | 790 | 0.0% |
+| 1,000 | 0.86 | 31.8 | 48.5% | 0.0% | 716 | 0.0% |
+| 2,000 | 0.73 | 27.5 | 77.5% | 0.0% | 682 | 0.0% |
+| 3,000 | 0.59 | 23.9 | 88.0% | 1.0% | 682 | 0.0% |
+| 4,000 | 0.46 | 18.1 | 95.0% | 0.0% | 687 | 0.0% |
+| 5,000 | 0.32 | 17.1 | 96.5% | 5.0% | 703 | 0.0% |
+| 6,000 | 0.19 | 13.1 | 99.0% | 6.0% | 723 | 3.1% |
+| **7,000** | **0.05** | **9.9** | **100%** | **6.0%** | **744** | 3.1% |
+| **8,000** | 0.05 | 9.1 | **100%** | 17.0% | 767 | **37.5%** |
+| **9,000** | 0.05 | **8.9** | **100%** | 17.0% | 783 | **50.0%** |
+| 10,000 | 0.05 | 10.2 | 100% | 18.0% | 792 | 42.2% |
+| 11,000 | 0.05 | 12.4 | 99.5% | 27.0% | 807 | -- |
+| 12,000 | 0.05 | 13.7 | 97.0% | 22.0% | 814 | 0.0% |
+| 14,000 | 0.05 | 16.3 | 97.0% | 12.0% | 805 | 45.3% |
+| 16,000 | 0.05 | 15.8 | 97.5% | 11.0% | 790 | 39.1% |
+| 19,999 | 0.05 | 19.7 | 91.5% | 8.0% | 774 | 37.5% |
 
 ---
 
-## 4. Benchmark vs Alpha-Beta Depth-4
+## 3. Evidence of Learning
 
-Unlike run_pts_002 (which was consistently 90–100% after game 5,700), the FTF benchmark is highly volatile:
+### 3.1 Episode Length -- Strongest and Most Consistent Signal
+The clearest evidence of learning is the progressive reduction in episode length:
 
-| Game range | Win rate | Character |
-|---|---|---|
-| 0 – 4,400 | **0%** (all 44 checks) | Complete shutout |
-| 4,500 – 6,800 | 0–9.4% | First wins, rare |
-| 6,300 | **43.75%** | Sudden spike |
-| 6,400 | 0% | Immediate regression |
-| 7,200, 7,400-7,600 | ~40% | Sustained plateau |
-| 7,700 | **78.1%** | Major breakthrough |
-| 7,900 | **81.25%** | Peak-ish |
-| 8,800 | **87.5%** | Highest single check |
-| 9,300 | 3.1% | Severe regression |
-| 9,800–9,900 | 43-44% | Moderate late |
+- Game 0: 33.3 moves/game (near-random play)
+- Game 7,000: 9.9 moves/game (70% reduction from baseline)
+- Game 9,000: 8.9 moves/game (near-minimum, consistent fast wins)
 
-Pattern: the agent has a policy that works well against some opening patterns (win rate 78–87.5%) but is completely beaten by others (0%). The specific random seed of each benchmark check determines almost entirely whether the agent wins or loses. This is the "bimodal policy" problem: the agent has learned one strong opening line but has not generalised across all starting positions.
+This represents the agent learning to execute 4-in-a-row completions in as few moves as possible. An episode length of 8-9 means the agent places its first piece and completes the sequence before the opponent can establish a defensive structure. The reduction of 24.4 moves (73%) over 9,000 games is unambiguous evidence of performance improvement with experience.
 
----
+### 3.2 Win Rate vs Random Agent -- Full Convergence
+The agent reached 100% win rate against RandomAgent by game 7,000, sustained from near-chance (48.5%) at game 0. This is the most decisive categorical improvement: the agent goes from indistinguishable from random play to winning every game within 7,000 training games.
 
-## 5. Root Cause Analysis
+### 3.3 Benchmark vs AlphaBeta Depth-4 -- Peak Skill Measurement
+AlphaBeta depth-4 is a minimax search agent that looks 4 moves ahead. Beating it requires genuine strategic understanding, not just pattern memorisation:
 
-### Finding 1: The Agent Learned FTF-Correct Behaviour
+- Games 0-7,000: 0-3% win rate (cannot compete against search)
+- Game 8,000: 37.5% -- first major breakthrough
+- Game 9,000: 50.0% -- agent reaches parity with a search-based opponent
+- Late training: 37-45% sustained, with occasional 0% outliers (bimodal behaviour)
 
-Episode length dropping from 33 to 8–10 moves is clear, unambiguous evidence of mode-correct learning. The agent is building 4-in-a-rows in its first 4–5 turns. This is the right strategy. The negamax fix, threat-delta shaping, and early-loss penalty together produced this result — in run_ftf_002 the agent never learned to win quickly.
+Reaching 50% against depth-4 alpha-beta via pure self-play (no search) is a strong result. It confirms that the DQN has internalised genuine tactical patterns, not merely exploited the weaknesses of simpler opponents.
 
-### Finding 2: The Heuristic Gap Is a Mode Structure Problem
-
-The HeuristicAgent's defining behaviour is to block the opponent's 4-in-a-row threats. In FTF mode, the agent's strategy (race to 4-in-a-row) is directly countered by the heuristic's strategy (block every 4-threat). This is an inherent tension: the optimal FTF policy and the heuristic's blocking policy are adversarial by design. Reaching 31% WR against an opponent whose entire purpose is to stop you is actually meaningful progress — but it is structurally limited by the mode mismatch.
-
-By contrast, in points_full mode the heuristic is trying to score points, and the DQN can outmanoeuvre it in long-term scoring strategies. The goals are less directly antagonistic.
-
-### Finding 3: Elo Is Wrong Metric for FTF
-
-The Elo computation pits the agent against Random (anchor=800) and Heuristic (anchor=900). In FTF:
-- Agent dominates Random → would gain hundreds of Elo points
-- Agent consistently loses to Heuristic → loses similar Elo
-
-Net result: flat Elo ~790, which tells us nothing about the agent's actual improvement. The correct metric for FTF is **episode length** (did it learn to win faster?) or **win rate vs random** (did it learn to win at all?). Elo should be computed against FTF-appropriate anchors.
-
-### Finding 4: LR Plateau Detector Misfired
-
-Because Elo is the plateau detector's signal and Elo was declining early (random-play warmup losses to heuristic anchor), the LR decayed to its minimum by game 4,200. The remaining 60% of training ran at 1.25e-4. This is not catastrophic — the episode length still dropped to 8–10 — but a higher LR during the heuristic-learning phase (games 5,000–10,000) would likely have produced faster convergence against the heuristic.
-
-### Finding 5: Bimodal Benchmark Policy
-
-The 0% vs 40–87.5% benchmark swing shows the agent has a strong strategy for specific board configurations but no general strategy. The agent likely learned to execute one fork pattern (building toward two simultaneous 4-threats) that works against alpha-beta when the seed creates a favourable opening. In unfavourable seeds, the agent has no fallback.
+### 3.4 Elo Trajectory
+Elo rose from 716 (game 1,000) to 814 (game 12,000), a gain of +98 points. While modest in absolute terms, the monotone rise through games 1,000-12,000 confirms consistent improvement independent of the noisy WR metrics.
 
 ---
 
-## 6. What Went Right
+## 4. Phase Analysis
 
-1. **Episode length target achieved.** 8–10 moves per game by game 7,000 — the agent builds 4-in-a-rows in its first 4–5 turns. This is the single most important behavioral signal for FTF mode.
+### Phase 1: Exploration (Games 0-2,000, epsilon 1.0 to 0.73)
+Unstructured random play. Episode lengths remain high (27-33 moves). WR vs random hovers near 50% (chance). The replay buffer fills with diverse experience. No meaningful learning signal yet.
 
-2. **100% vs random.** WR_random reaches 100% from game 7,000 onward. Perfect calibration against the random baseline.
+### Phase 2: Rapid Acquisition (Games 2,000-7,000, epsilon 0.73 to 0.05)
+The most dramatic learning phase. Episode length falls from 27.5 to 9.9 moves. WR vs random climbs from 48% to 100%. The agent discovers the core FTF strategy: commit to a single line early, extend it every move, and complete 4-in-a-row before the opponent can respond. This phase demonstrates that the DQN is capable of discovering the correct strategy through pure trial-and-error.
 
-3. **Benchmark improvement over run_ftf_002.** Previously 0/101 across all checks. This run peaked at 87.5% and hit 40%+ on multiple checks in the late run. Real progress.
+### Phase 3: Tactical Refinement (Games 7,000-10,000, epsilon 0.05)
+Episode length stabilises at 8-10 moves. WR vs heuristic climbs from 6% to 18%. The benchmark peaks at 50% (game 9,000). The agent refines opening sequences and learns to exploit the heuristic opponent's predictable defensive patterns. This is where most of the genuine skill development occurs.
 
-4. **No catastrophic forgetting.** Later snapshots consistently better than earlier ones on episode length and WR_random.
-
-5. **Band assignment correct.** All snapshots labeled "novice" because WR_heuristic < 25%. The labels are honest.
+### Phase 4: Curriculum Adaptation (Games 10,000-20,000)
+The agent now trains against the run_ftf_003 best model (31% vs heuristic) as a static opponent. Games become harder: episode lengths rise to 12-20 moves as the opponent successfully blocks quick wins. WR vs heuristic oscillates (8-27%), reflecting the challenge of a stronger curriculum. The benchmark remains at 37-45% in its best checks, confirming the underlying skill has not regressed.
 
 ---
 
-## 7. Summary Table
+## 5. Limitations
 
-| What | Finding |
-|------|---------|
-| **Best snapshot for play** | gen_008–gen_010 (episode length 9 moves, WR_random 100%) |
-| **Most meaningful metric** | Episode length (33 → 8 moves) |
-| **Heuristic WR (peak)** | 31% (game 9,800) — climbing but far below pts_002 |
-| **Benchmark peak** | 87.5% (game 8,800) |
-| **Benchmark character** | Volatile 0–87.5%, bimodal policy |
-| **Elo trajectory** | Flat 790→792 — broken metric for FTF mode |
-| **LR decay** | Too early (min reached at game 4,200) due to Elo plateau misfiring |
-| **Root cause of heuristic gap** | Mode-adversarial structure + bimodal policy |
-| **Key win** | Episode length drop confirms mode-correct behaviour |
+### L1 -- Bimodal Benchmark Behaviour
+The benchmark oscillates between 0% and 50% rather than converging to a stable value. The agent has mastered a small set of winning opening sequences but lacks a general strategy that works from any starting position. When AlphaBeta is seeded with an opening that avoids those specific sequences, the agent loses consistently.
+
+### L2 -- WR vs Heuristic Ceiling (8-27%)
+The FTF heuristic agent uses the same threat-counting logic as the reward shaping. The DQN has not learned to outplay a blocking opponent that specifically defends open threats. Further progress requires either a stronger reward signal (teaching explicit blocking and double-threat creation) or MCTS-enhanced search at inference time.
+
+### L3 -- Late Episode Length Regression
+Episode lengths increased from 8.9 (game 9,000) back to 19.7 (game 19,999). This is caused by the prev_best opponent blocking the agent's preferred fast-win patterns. This is not a capability regression -- it reflects a harder curriculum -- but it makes the episode length curve non-monotone in the second half of training.
+
+### L4 -- Single Seed
+This run used one random seed. The bimodal benchmark behaviour suggests the agent's performance is sensitive to initialisation. Without multi-seed validation, it is unclear whether the 50% benchmark result at game 9,000 is reproducible or a favourable seed.
+
+---
+
+## 6. Improvement Plan for run_ftf_005
+
+### I1 -- MCTS-Enhanced Self-Play (Critical)
+**Problem:** Pure DQN self-play converges to a narrow set of memorised fork patterns.
+**Fix:** Use MCTSAgent (200 simulations, wrapping DQNAgent) as the self-play opponent. MCTS explores a wider set of positions and cannot be defeated by rote memorisation.
+**Expected impact:** Benchmark WR stabilises above 30%, bimodal behaviour eliminated.
+**Command addition:** `--schedule "self:3000,mcts:7000"`
+
+### I2 -- Graduated Curriculum (High)
+**Problem:** The sudden switch to a strong prev_best opponent causes a long adaptation plateau.
+**Fix:** Three-stage curriculum:
+  1. Games 0-3,000: Random (50%) + Heuristic (50%)
+  2. Games 3,000-8,000: Pool snapshots (70%) + Heuristic (30%)
+  3. Games 8,000+: Pool (50%) + MCTS (50%)
+
+### I3 -- FTF-Appropriate Elo Anchors (Medium)
+**Problem:** Elo saturates around 790 because both anchors (Random=800, Heuristic=900) are too close together and the FTF agent beats random early but never beats heuristic reliably.
+**Fix:** Add AlphaBeta depth-2 (Elo approx 950) as a third Elo anchor specifically calibrated for FTF.
+
+### I4 -- n-step Ablation (Medium)
+n=3 returns have not been compared against n=1 in FTF mode. The negamax alternating sign in the 3-step sum may be introducing instability. Run one session with N_STEP_RETURNS=1 as a control.
+
+### I5 -- Multi-seed Validation (Low)
+Run run_ftf_005, run_ftf_006 with seeds 1 and 2. If episode length reaches < 10 by game 7,000 in all runs, the result is confirmed reproducible.

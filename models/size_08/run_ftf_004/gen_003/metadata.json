@@ -1,7 +1,7 @@
 {
   "version_id": "gen_003",
   "board_size": 8,
-  "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\run_ftf_004\\gen_003\\weights.pt",
+  "weights_path": "C:\\Users\\*----*\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\run_ftf_004\\gen_003\\weights.pt",
   "run_id": "run_ftf_004",
   "created_at": "2026-06-01T13:57:53.748329+00:00",
   "games_trained": 3000,

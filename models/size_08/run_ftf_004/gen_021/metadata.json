@@ -1,0 +1,38 @@
+{
+  "version_id": "gen_021",
+  "board_size": 8,
+  "weights_path": "C:\\Users\\*----*\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\run_ftf_004\\gen_021\\weights.pt",
+  "run_id": "run_ftf_004",
+  "created_at": "2026-06-04T01:58:28.712004+00:00",
+  "games_trained": 17000,
+  "gradient_steps": 3988,
+  "epsilon_at_freeze": 0.050000000000000044,
+  "parent_run_id": "674fe197-2a51-4af5-88d2-d6f44eda94ca",
+  "parent_version_id": "gen_020",
+  "win_rate_vs_random": 0.985,
+  "win_rate_vs_heuristic": 0.11,
+  "win_rate_vs_self": null,
+  "elo_rating": 783.6,
+  "mean_episode_length": 18.445,
+  "training_history": [
+    {
+      "games_trained": 16000,
+      "win_rate_vs_random": 0.915,
+      "elo_rating": 794.9
+    },
+    {
+      "games_trained": 17000,
+      "win_rate_vs_random": 0.985,
+      "elo_rating": 783.6
+    }
+  ],
+  "friendly_name": "Apprentice",
+  "difficulty_band": "novice",
+  "notes": "",
+  "model_version": 2,
+  "state_channels": 10,
+  "network_arch": "resnet_v1",
+  "parent_schedule_path": null,
+  "human_games_seen": 0,
+  "benchmark_summary": null
+}

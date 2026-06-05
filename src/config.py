@@ -14,7 +14,8 @@ TRAINING_LOG_PATH = RESULTS_DIR / "training_log.csv" # legacy (train.py override
 # ---------------------------------------------------------------------------
 # Board
 # ---------------------------------------------------------------------------
-BOARD_SIZES = [8, 9, 10, 11, 12]
+BOARD_SIZES = [8, 9, 10, 11, 12]          # all supported sizes
+UI_BOARD_SIZES = [8]                       # sizes shown in the UI (add back once agents trained)
 DEFAULT_BOARD_SIZE = 10
 
 PLAYER_1 = 1

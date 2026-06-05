@@ -86,11 +86,11 @@ directory, and submit a valid link.
 Show less
 Let me read the new rubric carefully and structure these to maximise marks on both rubrics simultaneously.
 
-Write c:\Users\Colile\Documents\School\NWU\S1\ITRI616 Artificial Intelligence 1\ITRI616_AI_Game_Project_Flat_4_in_Row\docs\report_final.md
+Write c:\Users\*----*\Documents\School\NWU\S1\ITRI616 Artificial Intelligence 1\ITRI616_AI_Game_Project_Flat_4_in_Row\docs\report_final.md
 178 lines
-Write c:\Users\Colile\Documents\School\NWU\S1\ITRI616 Artificial Intelligence 1\ITRI616_AI_Game_Project_Flat_4_in_Row\docs\presentation_script_final.md
+Write c:\Users\*----*\Documents\School\NWU\S1\ITRI616 Artificial Intelligence 1\ITRI616_AI_Game_Project_Flat_4_in_Row\docs\presentation_script_final.md
 218 lines
-Write c:\Users\Colile\Documents\School\NWU\S1\ITRI616 Artificial Intelligence 1\ITRI616_AI_Game_Project_Flat_4_in_Row\docs\demo_plan_final.md
+Write c:\Users\*----*\Documents\School\NWU\S1\ITRI616 Artificial Intelligence 1\ITRI616_AI_Game_Project_Flat_4_in_Row\docs\demo_plan_final.md
 104 lines
 Three final documents saved:
 
