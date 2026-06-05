@@ -1,0 +1,56 @@
+Assignment - In progress
+Complete the form, then choose the appropriate button at the bottom.
+
+Once submitted, this assignment will be part of an anonymous peer review. Make sure not to include your name in any submission text, files or file names. However, please be aware that your identity, such as your name, will be displayed to the instructor.
+Honor Pledge AcceptedIn progressSubmittedReturned
+Title
+Mini-project: A game-playing agent with machine learning in a novel task. This assignment has attachments
+Due
+5 Jun 2026, 23:55
+Number of resubmissions allowed
+0
+Status
+Honor Pledge Accepted
+Grade Scale
+Points (max 100.00)
+Instructions
+Please upload your final mini-project in accordance with the original project and submission guidelines provided at the beginning of the semester.
+
+The submission here should include:
+
+The Technical report
+A download link (or zipped code) with instructions and documentation
+The Slides used for the 5 minute oral presentation
+(A download link for a video of the presentation if you did not present in class.)
+ 
+
+Rubric for slides and oral presentation of ITRI 616 mini-project
+max
+Problem definition and TEP framework.
+(Clearly explain the game, Tasks, Experiences, and Performance with strong justification and relevance.)	4
+Technical understanding and methodology 	4
+Results presentation and analysis 	4
+Communication and organisation 	4
+Response to questions and critical thinking 	4
+20
+Rubric for technical report of ITRI 616 mini-project	 
+max
+Formal TEP definitions	10
+Learning algorithm choices and implementation	20
+Experimental evaluation results	20
+Critical analysis	15
+Reflection on the project as a whole	5
+70
+Project code and code documentation	 
+How to install, run and do experiments (see learning)	10
+Additional resources for assignment
+File attachment 2026 ITRI 616 Mini-project assignment.pdf ( 122 KB; 2 Jun 2026, 12:20 )
+Submission
+Assignment Text
+This assignment allows submissions using both the text box below and attached documents. Type your submission in the box below and/or use the Browse button or the "select files" button to include other documents. Save frequently while working.
+
+
+Attachments
+No attachments yet
+
+Select a file from computer	

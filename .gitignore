@@ -52,7 +52,7 @@ gitignore
 rules.md
 plan.md
 todo.md
-log.md
+# log.md
 
 # Training outputs (generated, not source)
 # results/checkpoints/
@@ -62,5 +62,5 @@ log.md
 # NumPy checkpoint files
 *.npz
 
-deliverables/
-docs/
+# deliverables/
+# docs/
