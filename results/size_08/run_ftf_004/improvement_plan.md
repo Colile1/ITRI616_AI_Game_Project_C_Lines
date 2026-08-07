@@ -1,4 +1,4 @@
-# Improvement Plan — Lessons from `run_ftf_003`
+# Improvement Plan: Lessons from `run_ftf_003`
 
 **Written:** 2026-06-02
 **Based on:** `results/size_08/run_ftf_003/analysis_report.md`
@@ -6,17 +6,17 @@
 
 ---
 
-## What is Already Working (keep)
+## What is Already Working
 
-- Negamax TD target, Double DQN, Huber loss — all confirmed working
-- Threat-delta reward shaping (open-3) — producing fast 4-in-a-row completions
-- Early-loss synthetic terminal transition — confirmed: episode length drops to 8–10 moves
-- Plateau-based LR decay — conceptually correct; the misfiring is a metric problem (see F1)
-- Performance-based band assignment — correctly labels all snapshots novice (honest)
+- Negamax TD target, Double DQN, Huber loss, all confirmed working
+- Threat-delta reward shaping (open-3), producing fast 4-in-a-row completions
+- Early-loss synthetic terminal transition, confirmed: episode length drops to 8–10 moves
+- Plateau-based LR decay, conceptually correct; the misfiring is a metric problem (see F1)
+- Performance-based band assignment, correctly labels all snapshots novice (honest)
 
 ---
 
-## F1 — Replace Elo with Episode Length as the Primary FTF Metric (Critical)
+## F1: Replace Elo with Episode Length as the Primary FTF Metric
 
 **Problem:** The Elo tracker pits the agent against two anchors — Random (800) and Heuristic (900). In FTF mode, near-100% wins against Random cancel with near-90% losses against Heuristic, leaving Elo flat at ~790 for the entire run. This makes Elo useless as a skill signal and causes the plateau-based LR scheduler to decay LR to minimum by game 4,200.
 
@@ -30,7 +30,7 @@
 
 ---
 
-## F2 — Add Open-4 Threat Counting to Reward Shaping (High Priority)
+## F2: Add Open-4 Threat Counting to Reward Shaping (High Priority)
 
 **Problem:** The reward shaping uses open-3 threats (3-in-a-row with a free end). But the direct precursor to a 4-in-a-row win is an **open-4** (also called a "forced win" — a line where placing the 4th piece wins immediately). Rewarding open-4 creation would teach the agent specifically about the critical last step before winning.
 
@@ -46,7 +46,7 @@ where `FTF_THREAT_SCALE_4 >> FTF_THREAT_SCALE_3` to emphasise the winning threat
 
 ---
 
-## F3 — Fix the Difficulty Ladder (Medium Priority)
+## F3: Fix the Difficulty Ladder (Medium Priority)
 
 **Problem:** All 10 snapshots are labeled "novice" because WR_heuristic never reaches 25%. This is correct reporting but creates a flat, unusable difficulty system for players.
 
@@ -59,7 +59,7 @@ Recommend Option A as the most meaningful for player experience.
 
 ---
 
-## F4 — Address the Bimodal Benchmark Policy (Medium Priority)
+## F4: Address the Bimodal Benchmark Policy (Medium Priority)
 
 **Problem:** The benchmark oscillates between 0% and 87.5%. The agent has one strong fork pattern that works from specific positions but no general strategy. Seeds that start in other configurations produce complete losses.
 
@@ -84,7 +84,7 @@ Recommend all three.
 
 ---
 
-## F6 — Tune the Early-Loss Penalty Threshold (Low Priority)
+## F6: Tune the Early-Loss Penalty Threshold (Low Priority)
 
 **Problem:** `FTF_EARLY_LOSS_TURNS = 8` was calibrated for early training when games against random opponents lasted 30+ moves. Now that the self-play games themselves last 8–10 moves, almost every loss is "early" and receives the −1.5 penalty. This may be discouraging the agent from playing at all in positions where it cannot win quickly.
 
@@ -92,7 +92,7 @@ Recommend all three.
 
 ---
 
-## F7 — Multi-seed Validation (Low Priority)
+## F7: Multi-seed Validation (Low Priority)
 
 **Problem:** Like run_pts_002, this is a single-seed run. The bimodal benchmark suggests the policy is sensitive to initialisation.
 
@@ -116,6 +116,6 @@ Recommend all three.
 
 ## The Core Insight
 
-run_ftf_003 proved that the agent **can** learn to play FTF correctly (episode length 8–10, fast wins). The remaining gap — WR_heuristic only 13–31% — is not a fundamental failure of the algorithm; it is a **metric and curriculum problem**: the wrong metric (Elo) caused the LR to decay too early, and the heuristic opponent's blocking ability requires a more targeted reward signal (open-4 specifically) to overcome.
+run_ftf_003 proved that the agent **can** learn to play FTF correctly (episode length 8–10, fast wins). The remaining gap  (WR_heuristic only 13–31%) is not a fundamental failure of the algorithm; it is a **metric and curriculum problem**: the wrong metric (Elo) caused the LR to decay too early, and the heuristic opponent's blocking ability requires a more targeted reward signal (open-4 specifically) to overcome.
 
 The episode length curve (33 → 8 moves) is the clearest learning signal the project has produced for FTF mode. Build on it.
