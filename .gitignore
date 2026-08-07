@@ -69,5 +69,22 @@ todo.md
 *.webm
 *.m4v
 
+# Office documents (keep locally / share separately - not in git)
+*.ppt
+*.pptx
+*.pps
+*.ppsx
+*.pot
+*.potx
+*.doc
+*.docx
+*.dot
+*.dotx
+
+# Office lock / autosave temp files
+~$*
+*.tmp
+~WRL*.tmp
+
 # deliverables/
 # docs/
