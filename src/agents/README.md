@@ -8,7 +8,8 @@ All agent implementations. Every agent inherits `BaseAgent` and implements `sele
 | `dqn_agent.py` | `DQNAgent` | Double DQN + ResNet; trains via `update(batch)` |
 | `alphabeta_agent.py` | `AlphaBetaAgent` | Iterative-deepening alpha-beta search |
 | `mcts_agent.py` | `MCTSAgent` | PUCT MCTS wrapping any DQNAgent |
-| `heuristic_agent.py` | `HeuristicAgent` | Rule-based threat-counting agent |
+| `heuristic_agent.py` | `HeuristicAgent` | Rule-based threat agent (win / block / extend; four-in-a-row oriented) |
+| `points_heuristic_agent.py` | `PointsHeuristicAgent` | Greedy one-ply agent matched to points-until-full: scores each move by convex line-score gained across all directions minus the opponent score it denies |
 | `random_agent.py` | `RandomAgent` | Uniform random legal move |
 | `terminal_human_agent.py` | `TerminalHumanAgent` | Human input via terminal |
 | `ui_human_agent.py` | `UIHumanAgent` | Human input via PyGame (thread-safe queues) |

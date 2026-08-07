@@ -23,7 +23,7 @@ The answer is yes. And I have the numbers to prove it."
 
 *[If demo running in background, point at screen briefly]*
 
-"The game is called **C_lines**. I designed it for this project, inspired by Southern African line-formation traditions.
+"The game is called **C_lines**. I designed it for this project, line-formation traditions.
 
 It is played on an 8×8 board. You and your opponent take turns placing one piece anywhere on the board. You score points by forming unbroken lines of three or more pieces in any of the four directions. Longer lines score more. The board fills completely. Whoever has the higher total line score wins.
 

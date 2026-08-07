@@ -1,0 +1,1 @@
+game=28600  win_rate_vs_heuristic=1.0000

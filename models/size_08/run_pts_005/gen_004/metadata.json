@@ -1,0 +1,48 @@
+{
+  "version_id": "gen_004",
+  "board_size": 8,
+  "weights_path": "C:\\Users\\Colile\\Documents\\School\\NWU\\S1\\ITRI616 Artificial Intelligence 1\\ITRI616_AI_Game_Project_Flat_4_in_Row\\models\\size_08\\run_pts_005\\gen_004\\weights.pt",
+  "run_id": "run_pts_005",
+  "created_at": "2026-06-10T05:07:25.647224+00:00",
+  "games_trained": 27000,
+  "gradient_steps": 11992,
+  "epsilon_at_freeze": 0.050000000000000044,
+  "parent_run_id": "3488296c-3eab-4241-bb05-c14a9ad27d9e",
+  "parent_version_id": "gen_003",
+  "win_rate_vs_random": 0.935,
+  "win_rate_vs_heuristic": 0.87,
+  "win_rate_vs_self": null,
+  "elo_rating": 1116.5,
+  "mean_episode_length": 64.0,
+  "training_history": [
+    {
+      "games_trained": 24000,
+      "win_rate_vs_random": 0.975,
+      "elo_rating": 1102.1
+    },
+    {
+      "games_trained": 25000,
+      "win_rate_vs_random": 0.85,
+      "elo_rating": 1122.3
+    },
+    {
+      "games_trained": 26000,
+      "win_rate_vs_random": 0.955,
+      "elo_rating": 1130.0
+    },
+    {
+      "games_trained": 27000,
+      "win_rate_vs_random": 0.935,
+      "elo_rating": 1116.5
+    }
+  ],
+  "friendly_name": "Veteran",
+  "difficulty_band": "hard",
+  "notes": "",
+  "model_version": 2,
+  "state_channels": 10,
+  "network_arch": "resnet_v1",
+  "parent_schedule_path": null,
+  "human_games_seen": 0,
+  "benchmark_summary": null
+}

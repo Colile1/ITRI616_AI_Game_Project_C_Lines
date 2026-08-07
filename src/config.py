@@ -181,7 +181,7 @@ DEFAULT_SOURCE_WEIGHTS: dict[str, float] = {
 # ---------------------------------------------------------------------------
 BENCHMARK_EVERY_N_GAMES_SMALL = 100  # board sizes <= 10
 BENCHMARK_EVERY_N_GAMES_LARGE = 200  # board sizes >= 11
-BENCHMARK_GAMES_PER_CHECK = 64       # ↑ from 32 — halves sampling noise (R2)
+BENCHMARK_GAMES_PER_CHECK = 128      # ↑ from 64 — halves sampling noise again (run_pts_004 R3)
 
 # Self-play pool quality gate
 MIN_POOL_WR = 0.50          # only add snapshot to pool if WR vs random >= this

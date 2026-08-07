@@ -49,6 +49,7 @@ from src.agents.base_agent import BaseAgent
 from src.agents.dqn_agent import DQNAgent
 from src.agents.random_agent import RandomAgent
 from src.agents.heuristic_agent import HeuristicAgent
+from src.agents.points_heuristic_agent import PointsHeuristicAgent
 from src.config import (
     DEFAULT_BOARD_SIZE, DEFAULT_MODE,
     MODE_FIRST_TO_FOUR,
@@ -120,7 +121,9 @@ def _episode_worker(args: tuple) -> tuple:
     elif opp_type == "heuristic":
         opp = HeuristicAgent()
     else:
-        opp = RandomAgent()
+        # Default to HeuristicAgent instead of Random — Random floods the buffer with
+        # low-quality transitions that destroy policies trained against stronger opponents
+        opp = HeuristicAgent()
 
     env = GameEnv(board_size, mode)
     flip = (game_idx % 2 == 1)   # alternate sides each game
@@ -311,6 +314,8 @@ def _opponent_label(opponent, is_human_mode: bool) -> str:
         return "random"
     if cls == "HeuristicAgent":
         return "heuristic"
+    if cls == "PointsHeuristicAgent":
+        return "points_heuristic"
     if cls == "AlphaBetaAgent":
         depth = getattr(opponent, "depth", "?")
         return f"alphabeta_d{depth}"
@@ -333,6 +338,8 @@ def _make_benchmark_agent(benchmark_name: str, board_size: int):
         return AlphaBetaAgent(board_size=board_size, depth=depth)
     if benchmark_name == "heuristic":
         return HeuristicAgent()
+    if benchmark_name in ("points_heuristic", "pheuristic"):
+        return PointsHeuristicAgent()
     return RandomAgent()
 
 
@@ -364,6 +371,8 @@ def _make_opponent_from_signal(
         return lambda: _sample_pool_opponent(snapshot_pool), _cfg.DEFAULT_SOURCE_WEIGHTS.get("pool", 1.0), False
     if sig == "heuristic":
         return lambda: HeuristicAgent(), _cfg.DEFAULT_SOURCE_WEIGHTS.get("heuristic", 1.0), False
+    if sig in ("points_heuristic", "pheuristic"):
+        return lambda: PointsHeuristicAgent(), _cfg.DEFAULT_SOURCE_WEIGHTS.get("heuristic", 1.0), False
     if sig.startswith("alphabeta"):
         depth = None
         if "_d" in sig:
@@ -443,6 +452,9 @@ def train(
     start_game: int | None = None,      # override the starting game counter
     prev_best_weights: str | None = None,  # path to frozen opponent replacing RandomAgent
     n_workers: int = 1,                 # parallel episode-collection workers (>1 uses multiprocessing)
+    lr_start: float | None = None,      # override initial LR (use lower value when fine-tuning)
+    elo_start: float | None = None,     # override starting Elo (carry forward from previous run)
+    seed: int | None = None,            # fix torch/numpy/random seed for reproducibility
 ) -> None:
     """Auto-train with all improvements active.
 
@@ -451,6 +463,14 @@ def train(
     human_agent_override: pass a UIHumanAgent to use the PyGame UI instead of
     the terminal agent (set automatically by _launch_with_ui).
     """
+    # Reproducibility seed
+    if seed is not None:
+        import random as _random
+        _random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        print(f"  [seed] Fixed random seed={seed}")
+
     run_id = resolve_run_id(board_size, run_id, mode)
 
     results_run = _cfg.RESULTS_DIR / f"size_{board_size:02d}" / run_id
@@ -474,11 +494,30 @@ def train(
     buffer = ReplayBuffer(REPLAY_CAPACITY, use_augmentation=use_augmentation)
     env    = GameEnv(board_size=board_size, mode=mode)
 
+    # Override initial LR to prevent catastrophic forgetting when fine-tuning (R3)
+    if lr_start is not None:
+        for pg in agent._optimizer.param_groups:
+            pg["lr"] = lr_start
+        current_lr_init = lr_start
+        print(f"  [lr_start] LR overridden to {lr_start:.2e}")
+    else:
+        current_lr_init = LR
+
     # Seed agent weights from a previous run's best model (--load-weights)
     if load_weights:
         sd = torch.load(load_weights, map_location="cpu", weights_only=True)
         agent.load_state_dict(sd)
         print(f"  [load_weights] Loaded initial weights from {load_weights}")
+        # Auto-read ELO from sibling metadata.json if --elo-start not explicitly given
+        if elo_start is None:
+            _meta_path = Path(load_weights).parent / "metadata.json"
+            if _meta_path.exists():
+                import json as _json
+                _meta = _json.loads(_meta_path.read_text())
+                _elo_from_meta = _meta.get("elo_rating")
+                if isinstance(_elo_from_meta, (int, float)) and _elo_from_meta > 0:
+                    elo_start = float(_elo_from_meta)
+                    print(f"  [elo_start] Auto-read ELO={elo_start:.1f} from {_meta_path.name}")
 
     # Static frozen opponent replacing RandomAgent (--prev-best)
     if prev_best_weights:
@@ -527,12 +566,13 @@ def train(
     parent_run_uuid = str(uuid.uuid4())
     global_step = 0
     last_loss = 0.0
-    current_lr = LR
+    current_lr = current_lr_init   # respects --lr-start override
     plateau_count = 0
     best_wr_heuristic = 0.0
-    best_ep_len = float("inf")   # F1: FTF primary metric — lower is better
-    min_lr = LR * 0.125          # floor: three halving steps maximum
-    agent_elo = 800.0            # starting Elo estimate for a fresh agent
+    best_elo_saved = 0.0           # Elo at the time the best checkpoint was saved
+    best_ep_len = float("inf")     # F1: FTF primary metric — lower is better
+    min_lr = current_lr_init * 0.125   # floor: three halving steps maximum
+    agent_elo = elo_start if elo_start is not None else 800.0
     recent_ep_lens: list[float] = []   # F6: rolling window for adaptive threshold
 
     # Human mode state — use injected UI agent or fall back to terminal
@@ -643,9 +683,11 @@ def train(
             _agent_bytes = train._agent_bytes_cache
 
             # Determine opponent type for workers
-            _opp_type = "prev_best" if prev_best_weights else "random"
+            # Use heuristic as default (not random) — random floods buffer with
+            # low-quality data that destroys policies trained against stronger opponents
+            _opp_type = "prev_best" if prev_best_weights else "heuristic"
             if game_idx < WARMUP_GAMES:
-                _opp_type = "heuristic" if np.random.random() < WARMUP_HEURISTIC_PROB else _opp_type
+                _opp_type = "heuristic"
 
             _worker_args = [
                 (_agent_bytes, board_size, mode, epsilon,
@@ -821,11 +863,15 @@ def train(
                     if wr_h > best_wr_heuristic:
                         best_wr_heuristic = wr_h
             else:
-                if wr_h > best_wr_heuristic:
+                _is_better = (wr_h > best_wr_heuristic) or (
+                    wr_h == best_wr_heuristic and agent_elo > best_elo_saved
+                )
+                if _is_better:
                     best_wr_heuristic = wr_h
+                    best_elo_saved = agent_elo
                     _save_best(agent, best_dir, wr_h, game_idx)
                     plateau_count = 0
-                    print(f"  [best] New best WR vs heuristic: {wr_h:.2%} at game {game_idx}")
+                    print(f"  [best] New best WR={wr_h:.2%} ELO={agent_elo:.1f} at game {game_idx}")
                 else:
                     plateau_count += 1
 
@@ -1246,6 +1292,15 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--workers",        type=int, default=1,
                    help="Number of parallel episode-collection workers (default 1). "
                         "Set to 4-6 to use idle CPU cores for game simulation.")
+    p.add_argument("--lr-start",       type=float, default=None,
+                   help="Override the initial learning rate (default: config LR=1e-3). "
+                        "Use a lower value (e.g. 2e-4) when resuming from a converged model "
+                        "to avoid catastrophic forgetting.")
+    p.add_argument("--seed",           type=int, default=None,
+                   help="Fix random seed for torch, numpy and random for reproducibility.")
+    p.add_argument("--elo-start",      type=float, default=None,
+                   help="Override starting Elo (e.g. 1097.4 to carry forward from a previous run). "
+                        "Auto-read from metadata.json if --load-weights is given and this is omitted.")
     return p.parse_args()
 
 
@@ -1290,6 +1345,9 @@ def main() -> None:
             start_game=args.start_game,
             prev_best_weights=args.prev_best,
             n_workers=args.workers,
+            lr_start=args.lr_start,
+            elo_start=args.elo_start,
+            seed=args.seed,
         )
 
 
