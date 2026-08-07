@@ -60,5 +60,14 @@ todo.md
 # NumPy checkpoint files
 *.npz
 
+# Video recordings (too large for git - keep locally / share separately)
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.wmv
+*.webm
+*.m4v
+
 # deliverables/
 # docs/
