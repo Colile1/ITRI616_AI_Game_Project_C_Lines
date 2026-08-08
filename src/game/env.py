@@ -85,6 +85,22 @@ class GameEnv:
     def board(self) -> Board:
         return self._board
 
+    def set_state(self, board: Board) -> np.ndarray:
+        """Jump the environment to an arbitrary board (used by the UI's undo).
+
+        The shaping trackers are recomputed from *board* so the reward for the
+        next step is identical to what it would have been had the episode been
+        played to this position normally.  Not used during training.
+        """
+        from src.engine.board import clone_board
+
+        self._board = clone_board(board)
+        self.board_size = board.size
+        self._prev_scores = compute_scores(self._board)
+        self._prev_threats = compute_threats(self._board)
+        self._prev_double_threats = compute_double_threats(self._board)
+        return self._obs()
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

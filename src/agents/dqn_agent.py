@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import copy
+import os
 import numpy as np
 import torch
 import torch.nn as nn
@@ -24,7 +25,23 @@ def _best_device() -> torch.device:
     CPU on the DML backend, causing 100× overhead from repeated shared-memory
     transfers.  Only use DirectML if a discrete NVIDIA/AMD GPU is present.
     CUDA (discrete NVIDIA) is supported and fast.
+
+    The FLAT4_DEVICE environment variable overrides the automatic choice
+    ("cpu" / "cuda" / "auto").  Two uses:
+      * Episode-collection workers force "cpu" — they only ever run single-state
+        inference, so a per-worker CUDA context is pure overhead and VRAM waste.
+      * On a host where the tiny 8x8 ResNet is faster on CPU than on GPU (kernel
+        launch latency dominates single-state forwards), the whole run can be
+        pinned to CPU without a code change.
     """
+    requested = os.environ.get("FLAT4_DEVICE", "auto").strip().lower()
+    if requested == "cpu":
+        return torch.device("cpu")
+    if requested == "cuda":
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        print("  [device] FLAT4_DEVICE=cuda but CUDA is unavailable — using CPU.")
+        return torch.device("cpu")
     if torch.cuda.is_available():
         return torch.device("cuda")
     return torch.device("cpu")

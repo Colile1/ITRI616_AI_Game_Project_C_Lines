@@ -97,6 +97,10 @@ def _meta_to_entry(meta: SnapshotMetadata) -> dict:
         "elo_rating": meta.elo_rating,
         "created_at": meta.created_at,
         "model_version": meta.model_version,
+        # Architecture fields: without these a consumer that reads only the
+        # registry builds the wrong network and cannot load the weights.
+        "state_channels": meta.state_channels,
+        "network_arch": meta.network_arch,
     }
 
 
@@ -122,6 +126,10 @@ def _entry_to_meta(entry: dict, board_size: int) -> SnapshotMetadata:
         difficulty_band=entry.get("difficulty_band", "novice"),
         notes=entry.get("notes", ""),
         model_version=entry.get("model_version", 1),
+        # Older registries predate these keys; the snapshot's own metadata.json
+        # is the authoritative source and load_snapshot() prefers it.
+        state_channels=entry.get("state_channels", 6),
+        network_arch=entry.get("network_arch", "plain_v1"),
     )
 
 
@@ -136,12 +144,34 @@ def register(meta: SnapshotMetadata, models_dir: Path = MODELS_DIR) -> None:
     _write(path, entries)
 
 
+def _repair_weights_path(
+    meta: SnapshotMetadata, board_size: int, run_id: str, models_dir: Path
+) -> SnapshotMetadata:
+    """Re-point a stale absolute weights_path at the local snapshot folder.
+
+    weights_path is recorded as an absolute path at freeze time, so a run
+    produced on one machine (or in Colab under /content/...) records paths that
+    do not exist anywhere else.  The layout is fully determined by
+    models_dir/size_NN/run_id/version_id/weights.pt, so rebuild it whenever the
+    recorded path is missing and the canonical one is present.
+    """
+    if Path(meta.weights_path).exists():
+        return meta
+    canonical = _run_dir(board_size, run_id, models_dir) / meta.version_id / "weights.pt"
+    if canonical.exists():
+        meta.weights_path = str(canonical)
+    return meta
+
+
 def list_by_size_run(
     board_size: int, run_id: str, models_dir: Path = MODELS_DIR
 ) -> list[SnapshotMetadata]:
     path = _registry_path(board_size, run_id, models_dir)
     return sorted(
-        [_entry_to_meta(e, board_size) for e in _read(path)],
+        [
+            _repair_weights_path(_entry_to_meta(e, board_size), board_size, run_id, models_dir)
+            for e in _read(path)
+        ],
         key=lambda m: m.games_trained,
     )
 

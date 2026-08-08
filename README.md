@@ -45,13 +45,13 @@ C_lines/
 ├── src/                    # All source code
 │   ├── agents/             # DQN, AlphaBeta, MCTS, Heuristic, Random agents
 │   ├── engine/             # Board, rules, scoring (pure functions, no ML)
-│   ├── game/               # GameEnv (Gym-style), 10-channel state encoding
+│   ├── game/               # GameEnv, 10-channel encoding, analysis, saved games, stats
 │   ├── training/           # Training loop, replay buffer, self-play, snapshots
 │   ├── evaluation/         # Elo tracker, evaluator, plot generation
-│   ├── ui/                 # PyGame interface, menus, level select, board view
+│   ├── ui/                 # PyGame interface: menus, level select, board, sidebar, replays, stats
 │   ├── versioning/         # Snapshot metadata, model registry, migration
 │   └── config.py           # Single source of truth for all hyperparameters
-├── tests/                  # Unit + integration tests (72 tests, all passing)
+├── tests/                  # Unit + integration tests (166 unit tests, all passing)
 ├── scripts/                # Utility scripts (eval demo, figure generation)
 ├── docs/deliverables/      # Technical report, slides outline, project docs
 ├── results/size_08/        # Training logs, figures, best-model checkpoints
@@ -126,7 +126,27 @@ python -m pytest tests/ -q
 ## 3. Running the Code
 ### 3.1 Play the game (GUI)
 python -m src.ui.app
-This opens the PyGame window. Choose the 8x8 board and points-until-full mode, then the Level Select screen, which lists the trained snapshots (gen_001 ... gen_010) as difficulty cards read live from the model registry. Select a level to play against that checkpoint, or play hot-seat (human vs human) with no trained model.
+This opens the PyGame window. Choose the 8x8 board and points-until-full mode, then the Level Select screen, which lists every trained snapshot as a difficulty card read live from the model registry — sorted weakest-first and filterable by difficulty band, with the source run shown on each card. Select a level to play against that checkpoint, or play hot-seat (human vs human) with no trained model.
+
+The main menu also has **Replays** (browse and re-watch saved games) and **Statistics** (your lifetime record per difficulty band).
+
+#### In-game controls
+
+| Input | Action |
+|-------|--------|
+| Click, or arrow keys + Enter | Place a piece |
+| `U` / `Ctrl+Z` | Undo — versus the AI this rewinds its reply too |
+| `Ctrl+Y` | Redo |
+| `H` | Hint — the loaded snapshot's own greedy move |
+| `T` | Toggle the threat overlay (open threes/fours, win-now and lose-now cells) |
+| `E` | Toggle the evaluation meter |
+| `Q` | Resign (asks for confirmation) |
+| `F1` or `?` | Controls and scoring reference |
+| `ESC` | Back / main menu |
+
+The sidebar shows a live **evaluation meter**. Against a loaded snapshot this is the network's own value estimate (its best legal Q-value, squashed to ±1); in hot-seat it is a heuristic score differential. Settings (legal-move tint, threat overlay, coordinates, evaluation meter, reduced motion, auto-save, AI pace) persist to `results/ui_settings.json`.
+
+Finished games are written to `results/games/*.json` and your record accumulates in `results/player_stats.json`.
 ## 3.2 Evaluate a trained snapshot (numeric)
 python -m scripts.demo_eval --gen 10 --games 50
 

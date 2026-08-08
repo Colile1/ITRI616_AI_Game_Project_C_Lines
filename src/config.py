@@ -197,9 +197,68 @@ FTF_EARLY_LOSS_EXTRA  = 0.5    # extra penalty on top of LOSS_REWARD for early c
 N_STEP_RETURNS = 3             # n-step lookahead for TD target (1 = classic 1-step, F5/R3)
 
 # ---------------------------------------------------------------------------
-# UI
+# UI — layout
 # ---------------------------------------------------------------------------
-CELL_PX = 56
-BOARD_MARGIN = 36
-SIDEBAR_W = 320
+CELL_PX = 56                 # nominal cell size; the in-game board rescales
+BOARD_MARGIN = 36            # nominal margin (holds the coordinate labels)
+SIDEBAR_W = 340
 ANIMATION_DURATION_MS = 120
+
+MIN_CELL_PX = 26             # board never shrinks below this
+MAX_CELL_PX = 92             # …nor grows beyond it
+MIN_WINDOW_W = 900
+MIN_WINDOW_H = 640
+
+# ---------------------------------------------------------------------------
+# UI — motion (milliseconds).  All suppressed when "reduce_motion" is on.
+# ---------------------------------------------------------------------------
+DROP_ANIM_MS      = 170      # piece drop-in when placed
+WIN_LINE_ANIM_MS  = 650      # winning-line reveal sweep
+MODAL_FADE_MS     = 200      # game-over card fade-in
+TOAST_MS          = 2200     # how long a toast stays fully visible
+TOAST_FADE_MS     = 350      # …and how long it takes to fade out
+
+# ---------------------------------------------------------------------------
+# UI — AI pacing.  Minimum wall-clock time the AI appears to "think" for, so
+# its move is watchable.  Real compute time is added on top, never subtracted.
+# ---------------------------------------------------------------------------
+AI_SPEEDS = ["instant", "fast", "normal", "slow"]
+AI_THINK_DELAY_MS: dict[str, int] = {
+    "instant": 0,
+    "fast":    250,
+    "normal":  600,
+    "slow":   1200,
+}
+DEFAULT_AI_SPEED = "normal"
+
+# ---------------------------------------------------------------------------
+# UI — hint / evaluation
+# ---------------------------------------------------------------------------
+HINT_SEARCH_DEPTH   = 2      # alpha-beta depth used when no snapshot is loaded
+HINT_MAX_THINK_SEC  = 1.5    # hard cap so a hint never hangs the window
+EVAL_TANH_SCALE     = 1.0    # squashes network Q-values into [-1, 1]
+EVAL_SCORE_SCALE    = 3.0    # …and heuristic score differentials
+
+# ---------------------------------------------------------------------------
+# UI — history / undo
+# ---------------------------------------------------------------------------
+MAX_UNDO_PLIES = 400         # cap on the undo stack (a full 12×12 game is 144)
+
+# ---------------------------------------------------------------------------
+# UI — persistence
+# ---------------------------------------------------------------------------
+UI_SETTINGS_PATH  = RESULTS_DIR / "ui_settings.json"
+PLAYER_STATS_PATH = RESULTS_DIR / "player_stats.json"
+GAMES_DIR         = RESULTS_DIR / "games"
+MAX_SAVED_GAMES   = 200      # oldest records are pruned beyond this
+
+DEFAULT_UI_SETTINGS: dict = {
+    "show_legal":    True,
+    "show_threats":  False,
+    "show_coords":   True,
+    "show_eval":     True,
+    "reduce_motion": False,
+    "autosave":      True,
+    "sound":         False,
+    "ai_speed":      DEFAULT_AI_SPEED,
+}

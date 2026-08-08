@@ -107,15 +107,37 @@ def load_snapshot(
     run_id: Optional[str] = None,
     models_dir: Path = MODELS_DIR,
 ) -> DQNAgent:
-    """Load a frozen snapshot as a greedy eval-only agent."""
+    """Load a frozen snapshot as a greedy eval-only agent.
+
+    The registry entry is only a summary — it carries no architecture fields, so
+    trusting it would build a 6-channel plain network for every snapshot and then
+    fail to load 10-channel ResNet weights.  The per-snapshot metadata.json is
+    authoritative and is preferred whenever it is present.
+    """
+    from src.versioning.metadata import load_metadata
     from src.versioning.registry import get
+
     meta = get(board_size, version_id, run_id=run_id, models_dir=models_dir)
+    snap_dir = models_dir / f"size_{board_size:02d}" / meta.run_id / meta.version_id
+
+    sidecar = snap_dir / "metadata.json"
+    if sidecar.exists():
+        try:
+            meta = load_metadata(sidecar)
+        except (OSError, ValueError, TypeError):
+            pass   # summary metadata is better than nothing
 
     in_channels = getattr(meta, "state_channels", 6)
     network_arch = getattr(meta, "network_arch", "plain_v1")
 
+    # Recorded paths are absolute, so they break if the project is moved; fall
+    # back to the snapshot directory we just derived.
+    weights_path = Path(meta.weights_path)
+    if not weights_path.exists():
+        weights_path = snap_dir / "weights.pt"
+
     agent = DQNAgent(board_size, eval_only=True, in_channels=in_channels, network_arch=network_arch)
-    sd = torch.load(meta.weights_path, map_location="cpu", weights_only=True)
+    sd = torch.load(weights_path, map_location="cpu", weights_only=True)
     agent.load_state_dict(sd)
     agent.set_epsilon(0.0)
     return agent

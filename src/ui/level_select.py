@@ -6,34 +6,53 @@ import pygame
 
 from src.ui.theme import (
     BG_DEEP, TEXT_BRIGHT, TEXT_MUTED, TEXT_DIM,
-    P1_ACCENT, P2_ACCENT, font, draw_button,
+    BAND_COLORS as _BAND_COLORS, font, glyph, draw_button, draw_segmented, truncate,
 )
 from src.versioning.registry import list_by_size
 from src.versioning.metadata import SnapshotMetadata
 
-
-_BAND_COLORS = {
-    "novice":  (100, 200, 140),
-    "easy":    (100, 180, 255),
-    "medium":  (200, 180,  80),
-    "hard":    (220, 100,  80),
-    "master":  (200,  80, 220),
-}
-
 CARD_W, CARD_H   = 220, 130
 CARD_GAP         = 20
 CARDS_PER_ROW    = 4
-HEADER_H         = 110   # height reserved for title + hint above the card grid
+HEADER_H         = 152   # title + hint + the band filter row
 SCROLLBAR_W      = 10
 DOUBLE_CLICK_SEC = 0.40  # max gap between two clicks to register as double-click
+
+# Filter chips, weakest first.  "all" is always index 0.
+BANDS = ["all", "novice", "easy", "medium", "hard", "master"]
+FILTER_W, FILTER_H = 540, 28
+
+
+def _strength_key(snap: SnapshotMetadata) -> tuple:
+    """Order snapshots weakest → strongest.
+
+    Band first, so the grid reads in the same order as the filter chips.  Within
+    a band, measured win rate then Elo then training length.  Elo cannot lead:
+    it is absent on some snapshots, which would sort them to the wrong end.
+    """
+    try:
+        band_rank = BANDS.index(snap.difficulty_band)
+    except ValueError:
+        band_rank = 0
+    return (
+        band_rank,
+        snap.win_rate_vs_random if snap.win_rate_vs_random is not None else -1.0,
+        snap.elo_rating if snap.elo_rating is not None else -1.0,
+        snap.games_trained,
+        snap.run_id,
+        snap.version_id,
+    )
 
 
 class LevelSelectScreen:
     def __init__(self, board_size: int):
         self._board_size  = board_size
-        self._snapshots: list[SnapshotMetadata] = []
+        self._all: list[SnapshotMetadata] = []
+        self._snapshots: list[SnapshotMetadata] = []   # after filtering
+        self._band_idx    = 0
         self._hovered     = -1
         self._selected: str | None = None
+        self._selected_idx = -1        # index into _snapshots (ids repeat across runs)
         self._scroll_y    = 0          # pixels scrolled down
         self._drag_scroll = False      # True while dragging the scrollbar thumb
         self._drag_offset = 0          # y-offset within thumb at drag start
@@ -47,14 +66,46 @@ class LevelSelectScreen:
 
     def refresh(self) -> None:
         try:
-            self._snapshots = list_by_size(self._board_size)
+            self._all = sorted(list_by_size(self._board_size), key=_strength_key)
         except Exception:
-            self._snapshots = []
+            self._all = []
+        self._apply_filter()
+
+    def _apply_filter(self) -> None:
+        band = BANDS[self._band_idx]
+        self._snapshots = (
+            list(self._all) if band == "all"
+            else [s for s in self._all if s.difficulty_band == band]
+        )
         self._scroll_y = 0
+        self._hovered = -1
+        self._selected_idx = -1
+        self._selected = None
+
+    def band_counts(self) -> dict[str, int]:
+        counts = {"all": len(self._all)}
+        for snap in self._all:
+            counts[snap.difficulty_band] = counts.get(snap.difficulty_band, 0) + 1
+        return counts
 
     @property
     def selected_version_id(self) -> str | None:
         return self._selected
+
+    @property
+    def selected_meta(self) -> SnapshotMetadata | None:
+        """Full metadata for the chosen snapshot — the app labels the AI with it.
+
+        Resolved by index, not by version_id: the same gen_NNN exists in every
+        run, so an id alone is ambiguous once more than one run is registered.
+        """
+        if 0 <= self._selected_idx < len(self._snapshots):
+            return self._snapshots[self._selected_idx]
+        return None
+
+    @property
+    def snapshots(self) -> list[SnapshotMetadata]:
+        return list(self._snapshots)
 
     # ------------------------------------------------------------------
     # Layout helpers
@@ -67,6 +118,10 @@ class LevelSelectScreen:
 
     def _max_scroll(self, viewport_h: int) -> int:
         return max(0, self._grid_height() - viewport_h)
+
+    def _filter_rect(self, w: int) -> pygame.Rect:
+        width = min(FILTER_W, w - 80)
+        return pygame.Rect((w - width) // 2, HEADER_H - FILTER_H - 12, width, FILTER_H)
 
     def _card_rect(self, idx: int, w: int) -> pygame.Rect:
         n = len(self._snapshots)
@@ -87,16 +142,26 @@ class LevelSelectScreen:
 
         # Title
         title = font("display").render("Select Difficulty", True, TEXT_BRIGHT)
-        surface.blit(title, ((w - title.get_width()) // 2, 30))
-        hint = font("ui").render(
-            f"Board {self._board_size}×{self._board_size}  ·  Double-click or Play to start  ·  ESC = back",
+        surface.blit(title, ((w - title.get_width()) // 2, 20))
+        hint = font("small").render(
+            f"Board {self._board_size}×{self._board_size}  ·  weakest first  ·  "
+            f"double-click or Play to start  ·  ESC = back",
             True, TEXT_MUTED,
         )
-        surface.blit(hint, ((w - hint.get_width()) // 2, 74))
+        surface.blit(hint, ((w - hint.get_width()) // 2, 64))
+
+        if not self._all:
+            msg = font("ui").render(
+                "No snapshots found. Run training first.", True, TEXT_DIM
+            )
+            surface.blit(msg, ((w - msg.get_width()) // 2, h // 2))
+            return
+
+        self._draw_filter(surface, w)
 
         if not self._snapshots:
             msg = font("ui").render(
-                "No snapshots found. Run training first.", True, TEXT_DIM
+                f"No {BANDS[self._band_idx]} agents trained yet.", True, TEXT_DIM
             )
             surface.blit(msg, ((w - msg.get_width()) // 2, h // 2))
             return
@@ -122,6 +187,14 @@ class LevelSelectScreen:
             x, y = rect.x, rect.y
             surface.blit(font("ui").render(snap.friendly_name, True, TEXT_BRIGHT),  (x + 8, y + 8))
             surface.blit(font("small").render(snap.difficulty_band.upper(), True, band_col), (x + 8, y + 28))
+
+            # Provenance: without it, snapshots from different runs are
+            # indistinguishable — the same gen_NNN exists in every run.
+            origin = font("hint").render(
+                truncate("hint", f"{_short_run(snap.run_id)}/{snap.version_id}", 96),
+                True, TEXT_DIM,
+            )
+            surface.blit(origin, (x + CARD_W - origin.get_width() - 8, y + 10))
 
             wr    = f"{snap.win_rate_vs_random:.0%}" if snap.win_rate_vs_random is not None else "?"
             games = f"{snap.games_trained:,} games"
@@ -154,8 +227,24 @@ class LevelSelectScreen:
 
         # Scroll hint at bottom if there's more content below
         if self._max_scroll(h - HEADER_H) > 0 and self._scroll_y < self._max_scroll(h - HEADER_H):
-            more = font("small").render("▼ scroll for more", True, TEXT_DIM)
+            more = font("small").render(
+                f"{glyph('▼', 'v')} scroll for more", True, TEXT_DIM
+            )
             surface.blit(more, ((w - more.get_width()) // 2, h - 22))
+
+    def _draw_filter(self, surface: pygame.Surface, w: int) -> None:
+        counts = self.band_counts()
+        labels = [
+            f"{b.title()} ({counts.get(b, 0)})" if b != "all" else f"All ({counts['all']})"
+            for b in BANDS
+        ]
+        rect = self._filter_rect(w)
+        mx, my = pygame.mouse.get_pos()
+        hovered = -1
+        if rect.collidepoint(mx, my):
+            seg_w = rect.width // len(BANDS)
+            hovered = min(len(BANDS) - 1, max(0, (mx - rect.x) // seg_w))
+        draw_segmented(surface, rect, labels, self._band_idx, hovered_index=hovered)
 
     # ------------------------------------------------------------------
     # Event handling
@@ -170,6 +259,17 @@ class LevelSelectScreen:
         if event.type == pygame.MOUSEWHEEL:
             self._scroll_y = max(0, min(max_sc, self._scroll_y - event.y * 30))
             return None
+
+        # ---- Band filter ----
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self._all:
+            rect = self._filter_rect(w)
+            if rect.collidepoint(event.pos):
+                seg_w = rect.width // len(BANDS)
+                idx = min(len(BANDS) - 1, max(0, (event.pos[0] - rect.x) // seg_w))
+                if idx != self._band_idx:
+                    self._band_idx = int(idx)
+                    self._apply_filter()
+                return None
 
         # ---- Scrollbar drag ----
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and max_sc > 0:
@@ -220,6 +320,7 @@ class LevelSelectScreen:
                 if (idx == self._last_click_idx
                         and (now - self._last_click_time) <= DOUBLE_CLICK_SEC):
                     self._selected = snap.version_id
+                    self._selected_idx = idx
                     self._last_click_idx = -1
                     return "play"
 
@@ -232,9 +333,21 @@ class LevelSelectScreen:
                 )
                 if btn_rect.collidepoint(mx, my):
                     self._selected = snap.version_id
+                    self._selected_idx = idx
                     return "play"
                 return None  # card clicked but not Play — just update hover
 
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-            return "back"
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                return "back"
+            # Left/right cycle the band filter — the whole grid stays keyboard-usable.
+            if event.key in (pygame.K_LEFT, pygame.K_RIGHT):
+                step = 1 if event.key == pygame.K_RIGHT else -1
+                self._band_idx = (self._band_idx + step) % len(BANDS)
+                self._apply_filter()
         return None
+
+
+def _short_run(run_id: str) -> str:
+    """"run_pts_005" → "pts_005"; keeps the card label readable."""
+    return run_id[4:] if run_id.startswith("run_") else run_id

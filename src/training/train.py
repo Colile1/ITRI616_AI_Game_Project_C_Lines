@@ -93,7 +93,16 @@ def _episode_worker(args: tuple) -> tuple:
     in parallel without GIL contention.  Returns serialisable data only
     (lists of dicts, not Transition dataclasses).
     """
+    # Workers only ever run single-state inference, never a gradient step, so a
+    # per-worker CUDA context would cost VRAM and kernel-launch latency for no
+    # gain.  Set before DQNAgent is imported/constructed — _best_device() reads
+    # this at __init__ time.
+    import os
+    os.environ["FLAT4_DEVICE"] = "cpu"
+
     import io, torch, numpy as np
+    torch.set_num_threads(1)   # N workers × N threads each would oversubscribe
+
     from src.agents.dqn_agent import DQNAgent
     from src.agents.random_agent import RandomAgent
     from src.agents.heuristic_agent import HeuristicAgent
@@ -455,6 +464,7 @@ def train(
     lr_start: float | None = None,      # override initial LR (use lower value when fine-tuning)
     elo_start: float | None = None,     # override starting Elo (carry forward from previous run)
     seed: int | None = None,            # fix torch/numpy/random seed for reproducibility
+    benchmark_every: int | None = None, # override games between benchmark checks
 ) -> None:
     """Auto-train with all improvements active.
 
@@ -548,8 +558,8 @@ def train(
     if benchmark_name:
         bm_agent = _make_benchmark_agent(benchmark_name, board_size)
         bm_env   = GameEnv(board_size=board_size, mode=mode)
-        bm_every = (BENCHMARK_EVERY_N_GAMES_SMALL if board_size <= 10
-                    else BENCHMARK_EVERY_N_GAMES_LARGE)
+        bm_every = benchmark_every or (BENCHMARK_EVERY_N_GAMES_SMALL if board_size <= 10
+                                       else BENCHMARK_EVERY_N_GAMES_LARGE)
         bm_logger = BenchmarkLogger(
             log_path=results_run / "benchmark_log.csv",
             benchmark_agent=bm_agent,
@@ -1301,6 +1311,12 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--elo-start",      type=float, default=None,
                    help="Override starting Elo (e.g. 1097.4 to carry forward from a previous run). "
                         "Auto-read from metadata.json if --load-weights is given and this is omitted.")
+    p.add_argument("--benchmark-every", type=int, default=None,
+                   help="Games between benchmark checks (default 100 for size<=10). "
+                        "One alphabeta_d4 check plays BENCHMARK_GAMES_PER_CHECK=128 "
+                        "search-heavy games and can take 15+ minutes, so raise this "
+                        "(e.g. 500) on slow hardware. Diagnostic only — it does not "
+                        "affect what the agent learns.")
     return p.parse_args()
 
 
@@ -1348,6 +1364,7 @@ def main() -> None:
             lr_start=args.lr_start,
             elo_start=args.elo_start,
             seed=args.seed,
+            benchmark_every=args.benchmark_every,
         )
 
 

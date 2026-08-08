@@ -57,6 +57,11 @@ todo.md
 # results/figures/
 # results/logs/
 
+# Per-player app state (generated at runtime, machine-specific — not source)
+results/games/
+results/player_stats.json
+results/ui_settings.json
+
 # NumPy checkpoint files
 *.npz
 
